@@ -1,0 +1,23 @@
+[
+    {
+        "order_id": "20260721001",
+        "product_name": "蓝牙耳机",
+        "price": 399.0,
+        "quantity": 2,
+        "is_paid": true
+    },
+    {
+        "order_id": "20260721002",
+        "product_name": "机械键盘",
+        "price": 599.0,
+        "quantity": 1,
+        "is_paid": false
+    },
+    {
+        "order_id": "20260721003",
+        "product_name": "显示器",
+        "price": 1299.0,
+        "quantity": 1,
+        "is_paid": true
+    }
+]
