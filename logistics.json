@@ -1,0 +1,23 @@
+[
+  {
+    "order_id": "20260721001",
+    "tracking_number": "SF100000001",
+    "carrier": "顺丰速运",
+    "status": "in_transit",
+    "latest_event": "快件已到达上海转运中心"
+  },
+  {
+    "order_id": "20260721002",
+    "tracking_number": "YT100000002",
+    "carrier": "圆通速递",
+    "status": "pending",
+    "latest_event": null
+  },
+  {
+    "order_id": "20260721003",
+    "tracking_number": "JD100000003",
+    "carrier": "京东物流",
+    "status": "delivered",
+    "latest_event": "快件已由本人签收"
+  }
+]

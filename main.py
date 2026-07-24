@@ -2,16 +2,8 @@ import json
 
 from pydantic import ValidationError
 
-from models import Order
+from models import Logistics, Order, Product
 
-
-class product:
-    def __init__(self, name: str, price: float, quantity: int) -> None:
-        self.name = name
-        self.price = price
-        self.quantity = quantity
-    def total_price(self) -> float:
-        return self.price * self.quantity
 
 def find_order(order_id: str, orders: list[Order]) -> Order | None:
     for order in orders:
@@ -28,6 +20,7 @@ def print_order(order: Order) -> None:
     print(f"已支付: {order.payment_status()}")
     print(f"总价: {order.total_price()}")
 
+
 def load_orders(file_path: str) -> list[Order]:
     orders: list[Order] = []
     with open(file_path, "r", encoding="utf-8") as file:
@@ -38,6 +31,40 @@ def load_orders(file_path: str) -> list[Order]:
             order: Order = Order.model_validate(data)
             orders.append(order)
     return orders
+
+
+def load_products(file_path: str) -> list[Product]:
+    products: list[Product] = []
+    with open(file_path, "r", encoding="utf-8") as file:
+        datas = json.load(file)
+        for data in datas:
+            products.append(Product.model_validate(data))
+    return products
+
+
+def find_product(product_id: str, products: list[Product]) -> Product | None:
+    for product in products:
+        if product.product_id == product_id:
+            return product
+    return None
+
+
+def load_logistics(file_path: str) -> list[Logistics]:
+    logistics: list[Logistics] = []
+    with open(file_path, "r", encoding="utf-8") as file:
+        datas = json.load(file)
+        for data in datas:
+            logistics.append(Logistics.model_validate(data))
+
+    return logistics
+
+
+def find_logistics(order_id: str, logistics_list: list[Logistics]) -> Logistics | None:
+    for logistic in logistics_list:
+        if logistic.order_id == order_id:
+            return logistic
+    return None
+
 
 def main() -> None:
     input_order_id: str = input("请输入订单号: ").strip()

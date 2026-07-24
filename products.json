@@ -1,0 +1,23 @@
+[
+    {
+        "product_id": "PRODUCT-001",
+        "name": "蓝牙耳机",
+        "price": 399.0,
+        "stock": 100,
+        "is_returnable": true
+    },
+    {
+        "product_id": "PRODUCT-002",
+        "name": "机械键盘",
+        "price": 599.0,
+        "stock": 20,
+        "is_returnable": true
+    },
+    {
+        "product_id": "PRODUCT-003",
+        "name": "显示器",
+        "price": 1299.0,
+        "stock": 0,
+        "is_returnable": false
+    }
+]
