@@ -122,3 +122,10 @@ class Ticket(BaseModel):
     priority: TicketPriority = Field(default=TicketPriority.MEDIUM)
     status: TicketStatus = Field(default=TicketStatus.OPEN)
     assigned_to: str | None = Field(default=None, min_length=1, max_length=100)
+
+class TicketCreate(BaseModel):
+    order_id: str = Field(min_length=1, max_length=50)
+    user_id: str = Field(min_length=1, max_length=50)
+    issue_type: str = Field(min_length=1, max_length=100)
+    description: str = Field(min_length=1, max_length=1000)
+    priority: TicketPriority = Field(default=TicketPriority.MEDIUM)

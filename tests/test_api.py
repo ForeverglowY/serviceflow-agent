@@ -1,6 +1,13 @@
+from collections.abc import Iterator
+from uuid import UUID
+
+import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy.orm import Session
 
 from api import app
+from database import engine
+from db_models import TicketTable
 
 client = TestClient(app)
 
@@ -106,3 +113,176 @@ def test_preview_invalid_ticket_returns_422() -> None:
 
     assert ["body", "description"] in error_locations
     assert ["body", "priority"] in error_locations
+
+
+TEST_TICKET_ID = "TICKET-00000000000040008000000000000001"
+
+VALID_TICKET_CREATE_DATA = {
+    "order_id": "20260721001",
+    "user_id": "USER-TEST-001",
+    "issue_type": "product_fault",
+    "description": "自动化测试：蓝牙耳机左耳没有声音",
+    "priority": "high",
+}
+
+
+@pytest.fixture
+def clean_test_ticket() -> Iterator[None]:
+    def delete_test_ticket() -> None:
+        with Session(engine) as session:
+            with session.begin():
+                ticket_record = session.get(
+                    TicketTable,
+                    TEST_TICKET_ID,
+                )
+
+                if ticket_record is not None:
+                    session.delete(ticket_record)
+
+    delete_test_ticket()
+    yield
+    delete_test_ticket()
+
+
+def test_create_ticket_and_query_it(
+    monkeypatch: pytest.MonkeyPatch,
+    clean_test_ticket: None,
+) -> None:
+    fixed_uuid = UUID(
+        "00000000-0000-4000-8000-000000000001"
+    )
+    monkeypatch.setattr(
+        "api.uuid4",
+        lambda: fixed_uuid,
+    )
+
+    create_response = client.post(
+        "/tickets",
+        json=VALID_TICKET_CREATE_DATA,
+    )
+
+    assert create_response.status_code == 201
+
+    created_ticket = create_response.json()
+    assert created_ticket["ticket_id"] == TEST_TICKET_ID
+    assert created_ticket["order_id"] == "20260721001"
+    assert created_ticket["priority"] == "high"
+    assert created_ticket["status"] == "open"
+    assert created_ticket["assigned_to"] is None
+
+    query_response = client.get(
+        f"/tickets/{TEST_TICKET_ID}"
+    )
+
+    assert query_response.status_code == 200
+    assert query_response.json() == created_ticket
+
+
+def test_get_unknown_ticket_returns_404() -> None:
+    response = client.get(
+        "/tickets/TICKET-NOT-FOUND"
+    )
+
+    assert response.status_code == 404
+    assert response.json() == {
+        "detail": "工单不存在",
+    }
+
+
+def test_create_ticket_for_unknown_order_returns_404(
+    monkeypatch: pytest.MonkeyPatch,
+    clean_test_ticket: None,
+) -> None:
+    fixed_uuid = UUID(
+        "00000000-0000-4000-8000-000000000001"
+    )
+    monkeypatch.setattr(
+        "api.uuid4",
+        lambda: fixed_uuid,
+    )
+
+    invalid_data = {
+        **VALID_TICKET_CREATE_DATA,
+        "order_id": "ORDER-NOT-FOUND",
+    }
+
+    response = client.post(
+        "/tickets",
+        json=invalid_data,
+    )
+
+    assert response.status_code == 404
+    assert response.json() == {
+        "detail": "订单不存在",
+    }
+
+    with Session(engine) as session:
+        ticket_record = session.get(
+            TicketTable,
+            TEST_TICKET_ID,
+        )
+        assert ticket_record is None
+
+
+def test_create_ticket_with_invalid_body_returns_422() -> None:
+    invalid_data = {
+        "order_id": "20260721001",
+        "user_id": "USER-TEST-001",
+        "issue_type": "product_fault",
+        "description": "",
+        "priority": "critical",
+    }
+
+    response = client.post(
+        "/tickets",
+        json=invalid_data,
+    )
+
+    assert response.status_code == 422
+
+
+def test_create_ticket_id_conflict_returns_409(
+    monkeypatch: pytest.MonkeyPatch,
+    clean_test_ticket: None,
+) -> None:
+    with Session(engine) as session:
+        with session.begin():
+            session.add(
+                TicketTable(
+                    ticket_id=TEST_TICKET_ID,
+                    order_id="20260721001",
+                    user_id="USER-ORIGINAL",
+                    issue_type="existing_ticket",
+                    description="已经存在的测试工单",
+                    priority="medium",
+                    status="open",
+                    assigned_to=None,
+                )
+            )
+
+    fixed_uuid = UUID(
+        "00000000-0000-4000-8000-000000000001"
+    )
+    monkeypatch.setattr(
+        "api.uuid4",
+        lambda: fixed_uuid,
+    )
+
+    response = client.post(
+        "/tickets",
+        json=VALID_TICKET_CREATE_DATA,
+    )
+
+    assert response.status_code == 409
+    assert response.json() == {
+        "detail": "工单创建冲突",
+    }
+
+    with Session(engine) as session:
+        existing_ticket = session.get(
+            TicketTable,
+            TEST_TICKET_ID,
+        )
+
+        assert existing_ticket is not None
+        assert existing_ticket.user_id == "USER-ORIGINAL"
