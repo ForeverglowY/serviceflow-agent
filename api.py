@@ -4,8 +4,11 @@ from fastapi import FastAPI, HTTPException, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from agent_service import AgentServiceError, run_customer_agent
 from database import engine
 from db_models import LogisticsTable, OrderTable, ProductTable, TicketTable
+from llm_models import AgentRequest, AgentResponse, IntentRequest, IntentResult
+from llm_service import LLMServiceError, classify_intent
 from models import Logistics, Order, Product, Ticket, TicketCreate
 
 app = FastAPI(title="智能客服与工单处理 Agent")
@@ -81,3 +84,21 @@ def get_ticket(ticket_id: str) -> Ticket:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="工单不存在", )
 
         return Ticket.model_validate(ticket_record, from_attributes=True, )
+
+
+@app.post("/agent/intent", response_model=IntentResult, tags=["Agent"], summary="识别客户消息意图")
+def classify_customer_intent(request: IntentRequest) -> IntentResult:
+    try:
+        return classify_intent(request.message)
+    except LLMServiceError as exception:
+        # 转换成HTTPException
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="智能客服服务暂时不可用", ) from exception
+
+
+@app.post("/agent/chat", response_model=AgentResponse, tags=["Agent"], summary="智能客服对话")
+def chat_with_agent(request: AgentRequest, ) -> AgentResponse:
+    try:
+        answer = run_customer_agent(request.message)
+        return AgentResponse(answer=answer)
+    except AgentServiceError as exception:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="智能客服服务暂时不可用", ) from exception

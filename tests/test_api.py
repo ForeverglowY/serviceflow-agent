@@ -1,13 +1,17 @@
 from collections.abc import Iterator
+from unittest.mock import Mock
 from uuid import UUID
 
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
+from agent_service import AgentServiceError
 from api import app
 from database import engine
 from db_models import TicketTable
+from llm_models import CustomerIntent, IntentResult
+from llm_service import LLMServiceError
 
 client = TestClient(app)
 
@@ -17,6 +21,113 @@ def test_health() -> None:
 
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
+
+
+def test_classify_customer_intent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    expected_result = IntentResult(
+        intent=CustomerIntent.LOGISTICS_QUERY,
+        order_id="20260721002",
+        confidence=0.95,
+        reason="用户询问订单送达时间",
+    )
+    classify_mock = Mock(return_value=expected_result)
+    monkeypatch.setattr("api.classify_intent", classify_mock)
+
+    response = client.post(
+        "/agent/intent",
+        json={
+            "message": "订单20260721002什么时候能送到？",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "intent": "logistics_query",
+        "order_id": "20260721002",
+        "confidence": 0.95,
+        "reason": "用户询问订单送达时间",
+    }
+    classify_mock.assert_called_once_with(
+        "订单20260721002什么时候能送到？"
+    )
+
+
+def test_classify_customer_intent_returns_502(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "api.classify_intent",
+        Mock(side_effect=LLMServiceError("模拟模型服务失败")),
+    )
+
+    response = client.post(
+        "/agent/intent",
+        json={"message": "查询订单"},
+    )
+
+    assert response.status_code == 502
+    assert response.json() == {
+        "detail": "智能客服服务暂时不可用",
+    }
+
+
+def test_classify_customer_intent_rejects_empty_message() -> None:
+    response = client.post(
+        "/agent/intent",
+        json={"message": ""},
+    )
+
+    assert response.status_code == 422
+
+
+def test_chat_with_agent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    agent_mock = Mock(
+        return_value="订单20260721001当前状态为待处理。"
+    )
+    monkeypatch.setattr("api.run_customer_agent", agent_mock)
+
+    response = client.post(
+        "/agent/chat",
+        json={"message": "查询订单20260721001"},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "answer": "订单20260721001当前状态为待处理。",
+    }
+    agent_mock.assert_called_once_with("查询订单20260721001")
+
+
+def test_chat_with_agent_returns_502(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "api.run_customer_agent",
+        Mock(side_effect=AgentServiceError("模拟Agent失败")),
+    )
+
+    response = client.post(
+        "/agent/chat",
+        json={"message": "查询订单"},
+    )
+
+    assert response.status_code == 502
+    assert response.json() == {
+        "detail": "智能客服服务暂时不可用",
+    }
+
+
+def test_chat_with_agent_rejects_empty_message() -> None:
+    response = client.post(
+        "/agent/chat",
+        json={"message": ""},
+    )
+
+    assert response.status_code == 422
 
 
 def test_get_existing_order() -> None:
