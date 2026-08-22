@@ -1,4 +1,7 @@
-from sqlalchemy import Boolean, Float, ForeignKey, Integer, String
+from datetime import date
+
+from pgvector.sqlalchemy import Vector
+from sqlalchemy import Boolean, Date, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from models import LogisticsStatus, OrderStatus, TicketPriority, TicketStatus
@@ -210,4 +213,98 @@ class TicketTable(Base):
     assigned_to: Mapped[str | None] = mapped_column(
         String(100),
         nullable=True,
+    )
+
+
+class PolicyChunkTable(Base):
+    __tablename__ = "policy_chunks"
+
+    # | 字段 | Python类型 | 数据库类型 | 作用 |
+    # | --- | --- | --- | --- |
+    # | `chunk_id` | `str` | `String(80)` | 主键，片段唯一编号 |
+    # | `policy_id` | `str` | `String(50)` | 所属政策，建立索引 |
+    # | `title` | `str` | `String(200)` | 政策标题 |
+    # | `section` | `str` | `String(200)` | 章节标题 |
+    # | `content` | `str` | `Text` | 政策正文 |
+    # | `category` | `str` | `String(50)` | 政策分类，建立索引 |
+    # | `version` | `str` | `String(20)` | 政策版本 |
+    # | `effective_date` | `date` | `Date` | 生效日期 |
+    # | `status` | `str` | `String(20)` | 是否有效，建立索引 |
+    # | `applicable_products` | `str` | `String(100)` | 适用商品，建立索引 |
+    # | `source` | `str` | `String(500)` | 来源文件 |
+    # | `content_hash` | `str` | `String(64)` | 检测正文是否变化 |
+    # | `embedding_model` | `str` | `String(100)` | 生成向量的模型 |
+    # | `embedding` | `list[float]` | `Vector(512)` | 512 维向量 |
+    chunk_id: Mapped[str] = mapped_column(
+        String(80),
+        primary_key=True,
+    )
+
+    policy_id: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        index=True,
+    )
+
+    title: Mapped[str] = mapped_column(
+        String(200),
+        nullable=False,
+    )
+
+    section: Mapped[str] = mapped_column(
+        String(200),
+        nullable=False,
+    )
+
+    content: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+    )
+
+    category: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        index=True,
+    )
+
+    version: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+    )
+
+    effective_date: Mapped[date] = mapped_column(
+        Date,
+        nullable=False,
+    )
+
+    status: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        index=True,
+    )
+
+    applicable_products: Mapped[str] = mapped_column(
+        String(100),
+        nullable=False,
+        index=True,
+    )
+
+    source: Mapped[str] = mapped_column(
+        String(500),
+        nullable=False,
+    )
+
+    content_hash: Mapped[str] = mapped_column(
+        String(64),
+        nullable=False,
+    )
+
+    embedding_model: Mapped[str] = mapped_column(
+        String(100),
+        nullable=False,
+    )
+
+    embedding: Mapped[list[float]] = mapped_column(
+        Vector(512),
+        nullable=False,
     )

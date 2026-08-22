@@ -33,7 +33,8 @@ AGENT_SYSTEM_MESSAGE: ChatCompletionSystemMessageParam = {
 # 表示最多允许执行3轮工具，防止模型无限循环。
 MAX_TOOL_ROUNDS = 3
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("uvicorn.error.agent_service")
+logger.setLevel(logging.INFO)
 
 
 class AgentServiceError(Exception):
@@ -55,12 +56,17 @@ def _call_deepseek(messages: list[ChatCompletionMessageParam], ) -> ChatCompleti
 
 
 def run_customer_agent(user_text: str) -> str:
+    logger.info("Agent请求开始")
     # 1. user消息
     user_message: ChatCompletionUserMessageParam = {"role": "user", "content": user_text, }
 
     messages: list[ChatCompletionMessageParam] = [AGENT_SYSTEM_MESSAGE, user_message, ]
 
     for round_index in range(MAX_TOOL_ROUNDS + 1):
+        logger.info(
+            "Agent模型调用 round=%d",
+            round_index + 1,
+        )
         # +1 如果最大允许执行3轮工具，仍然需要再给模型一次机会生成最终回答：
         response = _call_deepseek(messages)
         message = response.choices[0].message
@@ -70,10 +76,18 @@ def run_customer_agent(user_text: str) -> str:
             if message.content is None:
                 raise AgentServiceError("DeepSeek没有返回内容")
 
+            logger.info(
+                "Agent请求完成 model_rounds=%d",
+                round_index + 1,
+            )
             return message.content
 
         # 已经执行了允许的最大工具轮数
         if round_index >= MAX_TOOL_ROUNDS:
+            logger.warning(
+                "Agent超过最大工具调用次数 max_rounds=%d",
+                MAX_TOOL_ROUNDS,
+            )
             raise AgentServiceError(
                 "超过最大工具调用次数"
             )

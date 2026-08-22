@@ -1,0 +1,147 @@
+[
+    {
+        "case_id": "RAG-EVAL-001",
+        "query": "七天无理由退货的话，寄回去的运费谁来承担？",
+        "expected_chunk_ids": [
+            "POL-RETURN-001-003"
+        ]
+    },
+    {
+        "case_id": "RAG-EVAL-002",
+        "query": "商品确认是质量问题后，可以给我换货还是只能维修？",
+        "expected_chunk_ids": [
+            "POL-RETURN-002-002"
+        ]
+    },
+    {
+        "case_id": "RAG-EVAL-003",
+        "query": "入耳式耳机已经拆封了，但是左边完全没有声音，还能退换吗？",
+        "expected_chunk_ids": [
+            "POL-RETURN-003-003"
+        ]
+    },
+    {
+        "case_id": "RAG-EVAL-004",
+        "query": "退款审核通过以后，银行卡一般几天能到账？",
+        "expected_chunk_ids": [
+            "POL-REFUND-001-002"
+        ]
+    },
+    {
+        "case_id": "RAG-EVAL-005",
+        "query": "我的设备进水了，还能享受免费保修吗？",
+        "expected_chunk_ids": [
+            "POL-WARRANTY-001-003"
+        ]
+    },
+    {
+        "case_id": "RAG-EVAL-006",
+        "query": "快递已经两天没有更新物流轨迹了，可以催查吗？",
+        "expected_chunk_ids": [
+            "POL-LOGISTICS-001-001"
+        ]
+    },
+    {
+        "case_id": "RAG-EVAL-007",
+        "query": "收到的商品和订单里买的不一样，申请处理需要提供什么？",
+        "expected_chunk_ids": [
+            "POL-LOGISTICS-002-002"
+        ]
+    },
+    {
+        "case_id": "RAG-EVAL-008",
+        "query": "商品买完三天就降价了，我能申请价格保护吗？",
+        "expected_chunk_ids": [
+            "POL-PRICE-001-001"
+        ]
+    },
+    {
+        "case_id": "RAG-EVAL-009",
+        "query": "电子发票的公司抬头写错了，应该怎样修改？",
+        "expected_chunk_ids": [
+            "POL-INVOICE-001-003"
+        ]
+    },
+    {
+        "case_id": "RAG-EVAL-010",
+        "query": "这个问题我不想再和机器人沟通了，请帮我转人工客服。",
+        "expected_chunk_ids": [
+            "POL-SERVICE-001-001"
+        ],
+        "require_all": false
+    },
+    {
+        "case_id": "RAG-EVAL-011",
+        "query": "耳机还没有拆封，签收五天了，能按七天无理由退货吗？",
+        "expected_chunk_ids": [
+            "POL-RETURN-003-001",
+            "POL-RETURN-001-001"
+        ],
+        "require_all": true
+    },
+    {
+        "case_id": "RAG-EVAL-012",
+        "query": "耳机进水以后左耳没声音，可以免费换新吗？",
+        "expected_chunk_ids": [
+            "POL-WARRANTY-001-003",
+            "POL-RETURN-003-003"
+        ],
+        "require_all": true
+    },
+    {
+        "case_id": "RAG-EVAL-013",
+        "query": "订单还没有发货，我现在不想要了，可以直接取消吗？",
+        "expected_chunk_ids": [
+            "POL-ORDER-001-001"
+        ]
+    },
+    {
+        "case_id": "RAG-EVAL-014",
+        "query": "快递已经发出去了，现在还能撤销订单吗？",
+        "expected_chunk_ids": [
+            "POL-ORDER-001-002"
+        ]
+    },
+    {
+        "case_id": "RAG-EVAL-015",
+        "query": "预售商品超过页面写的日期还没发货，我不接受延期怎么办？",
+        "expected_chunk_ids": [
+            "POL-PRESALE-001-003"
+        ]
+    },
+    {
+        "case_id": "RAG-EVAL-016",
+        "query": "订单用了满减券，退款时优惠券抵扣的钱会作为现金退给我吗？",
+        "expected_chunk_ids": [
+            "POL-COUPON-001-003"
+        ]
+    },
+    {
+        "case_id": "RAG-EVAL-017",
+        "query": "退主商品的时候赠送的小礼品也必须一起寄回吗？",
+        "expected_chunk_ids": [
+            "POL-GIFT-001-002"
+        ]
+    },
+    {
+        "case_id": "RAG-EVAL-018",
+        "query": "预约了上门安装但是一直没人确认具体时间，可以催一下吗？",
+        "expected_chunk_ids": [
+            "POL-INSTALL-001-002"
+        ]
+    },
+    {
+        "case_id": "RAG-EVAL-019",
+        "query": "账号注销以后我的个人资料会马上全部删除吗？",
+        "expected_chunk_ids": [
+            "POL-PRIVACY-001-003"
+        ]
+    },
+    {
+        "case_id": "RAG-EVAL-020",
+        "query": "带锂电池的设备为什么不能走航空加急配送？",
+        "expected_chunk_ids": [
+            "POL-LOGISTICS-003-001"
+        ]
+    }
+]

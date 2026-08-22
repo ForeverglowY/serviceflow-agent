@@ -4,3 +4,5 @@ __pycache__/
 *.py[cod]
 .DS_Store
 .env
+agent_study_before_pgvector.sql
+compose.yaml.before-pgvector
