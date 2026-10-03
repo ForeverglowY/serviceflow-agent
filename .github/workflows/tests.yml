@@ -7,6 +7,20 @@ on:
 jobs:
   pytest:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: agent
+          POSTGRES_PASSWORD: agent_password
+          POSTGRES_DB: agent_study
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U agent -d agent_study"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     env:
       DEEPSEEK_API_KEY: test-api-key
       CHECKPOINT_DATABASE_URL: postgresql://agent:agent_password@localhost:5432/agent_study
@@ -16,4 +30,9 @@ jobs:
         with:
           enable-cache: true
       - run: uv sync --locked --python 3.13
+      - name: Initialize isolated test database
+        run: |
+          uv run python -c 'from sqlalchemy import text; from serviceflow.db.database import engine; connection = engine.connect(); connection.execute(text("CREATE EXTENSION IF NOT EXISTS vector")); connection.commit(); connection.close()'
+          uv run python -m serviceflow.db.database
+          uv run python -m scripts.seed_data
       - run: uv run python -m pytest -q
