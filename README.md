@@ -254,7 +254,7 @@ uv run python -m pytest -q
 236 passed
 ```
 
-测试基线验证于 2026-10-03。单元与工作流测试通过 Mock 隔离真实 DeepSeek 和数据库调用；真实数据库事务与 Swagger 联调另行验证，不把模拟测试结果视为生产审批效果。
+测试基线验证于 2026-10-03。单元与工作流测试通过 Mock 隔离真实 DeepSeek 和数据库调用；部分 API 集成测试需要已建表并初始化数据的 PostgreSQL。GitHub Actions 自动创建独立测试数据库。Swagger 联调另行验证，不把模拟测试结果视为生产审批效果。
 
 检索评测：
 
