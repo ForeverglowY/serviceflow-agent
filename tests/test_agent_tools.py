@@ -3,9 +3,9 @@ from unittest.mock import Mock
 
 import pytest
 
-import agent_tools
-from agent_tools import ToolNotFoundError, execute_tool
-from llm_models import GetLogisticsResult, GetOrderResult
+from serviceflow.agent import tools as agent_tools
+from serviceflow.agent.tools import ToolNotFoundError, execute_tool
+from serviceflow.llm.models import GetLogisticsResult, GetOrderResult
 
 
 def test_execute_order_tool(

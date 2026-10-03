@@ -6,14 +6,32 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
-from agent_service import AgentServiceError
-from api import app
-from database import engine
-from db_models import TicketTable
-from llm_models import CustomerIntent, IntentResult
-from llm_service import LLMServiceError
+from serviceflow.agent.runtime import AgentServiceError
+from serviceflow.api import app
+from serviceflow.db.database import engine
+from serviceflow.db.models import TicketTable
+from serviceflow.llm.models import CustomerIntent, IntentResult
+from serviceflow.llm.service import LLMServiceError
+from serviceflow.ticket.service import TicketEligibilityRejectedError
 
 client = TestClient(app)
+
+
+@pytest.fixture(autouse=True)
+def isolated_workflow_graph(monkeypatch: pytest.MonkeyPatch):
+    from langgraph.checkpoint.memory import InMemorySaver
+    from serviceflow.agent.graph import build_customer_agent_graph
+    from serviceflow.agent.ticket_collection import build_ticket_collection_graph
+    from serviceflow.agent.workflow import build_customer_workflow
+
+    # 路由单测使用独立内存图，不依赖 PostgreSQL 生命周期。
+    agent_graph = build_customer_agent_graph(InMemorySaver())
+    ticket_graph = build_ticket_collection_graph(InMemorySaver())
+    workflow_graph = build_customer_workflow(agent_graph, Mock(), ticket_graph)
+    monkeypatch.setattr(app.state, "agent_graph", agent_graph, raising=False)
+    monkeypatch.setattr(app.state, "ticket_graph", ticket_graph, raising=False)
+    monkeypatch.setattr(app.state, "workflow_graph", workflow_graph, raising=False)
+    return workflow_graph
 
 
 def test_health() -> None:
@@ -33,7 +51,7 @@ def test_classify_customer_intent(
         reason="用户询问订单送达时间",
     )
     classify_mock = Mock(return_value=expected_result)
-    monkeypatch.setattr("api.classify_intent", classify_mock)
+    monkeypatch.setattr("serviceflow.api.classify_intent", classify_mock)
 
     response = client.post(
         "/agent/intent",
@@ -58,7 +76,7 @@ def test_classify_customer_intent_returns_502(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        "api.classify_intent",
+        "serviceflow.api.classify_intent",
         Mock(side_effect=LLMServiceError("模拟模型服务失败")),
     )
 
@@ -85,10 +103,13 @@ def test_classify_customer_intent_rejects_empty_message() -> None:
 def test_chat_with_agent(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    agent_mock = Mock(
-        return_value="订单20260721001当前状态为待处理。"
+    workflow_mock = Mock(
+        return_value=("订单20260721001当前状态为待处理。", "generated-chat-id")
     )
-    monkeypatch.setattr("api.run_customer_agent", agent_mock)
+    monkeypatch.setattr(
+        "serviceflow.api.run_customer_workflow",
+        workflow_mock,
+    )
 
     response = client.post(
         "/agent/chat",
@@ -98,15 +119,77 @@ def test_chat_with_agent(
     assert response.status_code == 200
     assert response.json() == {
         "answer": "订单20260721001当前状态为待处理。",
+        "thread_id": "generated-chat-id",
     }
-    agent_mock.assert_called_once_with("查询订单20260721001")
+    workflow_mock.assert_called_once_with(
+        user_text="查询订单20260721001",
+        workflow_graph=app.state.workflow_graph,
+        thread_id=None,
+    )
+
+
+def test_chat_with_agent_passes_thread_id(monkeypatch: pytest.MonkeyPatch) -> None:
+    workflow_mock = Mock(return_value=("订单号是20260721001。", "chat-memory-001"))
+    monkeypatch.setattr("serviceflow.api.run_customer_workflow", workflow_mock)
+
+    response = client.post("/agent/chat", json={
+        "message": "我刚才查询的订单号是什么？",
+        "thread_id": "chat-memory-001",
+    })
+
+    assert response.status_code == 200
+    assert response.json() == {"answer": "订单号是20260721001。", "thread_id": "chat-memory-001"}
+    workflow_mock.assert_called_once_with(
+        user_text="我刚才查询的订单号是什么？",
+        workflow_graph=app.state.workflow_graph,
+        thread_id="chat-memory-001",
+    )
+
+
+def test_chat_with_agent_resumes_server_generated_conversation(monkeypatch: pytest.MonkeyPatch) -> None:
+    workflow_mock = Mock(side_effect=[
+        ("已记住订单20260721001。", "server-generated-thread"),
+        ("您刚才提到20260721001。", "server-generated-thread"),
+    ])
+    monkeypatch.setattr("serviceflow.api.run_customer_workflow", workflow_mock)
+    first = client.post("/agent/chat", json={"message": "我正在咨询订单20260721001"})
+    assert first.status_code == 200
+    thread_id = first.json()["thread_id"]
+    assert thread_id == "server-generated-thread"
+
+    second = client.post("/agent/chat", json={
+        "message": "我刚才提到哪个订单？", "thread_id": thread_id,
+    })
+    assert second.status_code == 200
+    assert second.json() == {
+        "answer": "您刚才提到20260721001。", "thread_id": thread_id,
+    }
+    assert workflow_mock.call_args_list[0].kwargs["thread_id"] is None
+    assert workflow_mock.call_args_list[1].kwargs["thread_id"] == "server-generated-thread"
+
+
+@pytest.mark.parametrize("thread_id", ["", "x" * 101, 123])
+def test_chat_with_agent_rejects_invalid_thread_id(
+    monkeypatch: pytest.MonkeyPatch, thread_id: object,
+) -> None:
+    workflow_mock = Mock()
+    monkeypatch.setattr("serviceflow.api.run_customer_workflow", workflow_mock)
+
+    response = client.post("/agent/chat", json={
+        "message": "你好",
+        "thread_id": thread_id,
+    })
+
+    assert response.status_code == 422
+    assert any(error["loc"] == ["body", "thread_id"] for error in response.json()["detail"])
+    workflow_mock.assert_not_called()
 
 
 def test_chat_with_agent_returns_502(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        "api.run_customer_agent",
+        "serviceflow.api.run_customer_workflow",
         Mock(side_effect=AgentServiceError("模拟Agent失败")),
     )
 
@@ -263,7 +346,7 @@ def test_create_ticket_and_query_it(
         "00000000-0000-4000-8000-000000000001"
     )
     monkeypatch.setattr(
-        "api.uuid4",
+        "serviceflow.ticket.service.uuid4",
         lambda: fixed_uuid,
     )
 
@@ -308,7 +391,7 @@ def test_create_ticket_for_unknown_order_returns_404(
         "00000000-0000-4000-8000-000000000001"
     )
     monkeypatch.setattr(
-        "api.uuid4",
+        "serviceflow.ticket.service.uuid4",
         lambda: fixed_uuid,
     )
 
@@ -352,6 +435,20 @@ def test_create_ticket_with_invalid_body_returns_422() -> None:
     assert response.status_code == 422
 
 
+def test_create_ticket_eligibility_rejection_returns_409(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    reason = "订单未支付，暂不能创建售后工单。"
+    create_mock = Mock(side_effect=TicketEligibilityRejectedError(reason))
+    monkeypatch.setattr("serviceflow.api.create_ticket_service", create_mock)
+
+    response = client.post("/tickets", json=VALID_TICKET_CREATE_DATA)
+
+    assert response.status_code == 409
+    assert response.json() == {"detail": reason}
+    create_mock.assert_called_once()
+
+
 def test_create_ticket_id_conflict_returns_409(
     monkeypatch: pytest.MonkeyPatch,
     clean_test_ticket: None,
@@ -375,7 +472,7 @@ def test_create_ticket_id_conflict_returns_409(
         "00000000-0000-4000-8000-000000000001"
     )
     monkeypatch.setattr(
-        "api.uuid4",
+        "serviceflow.ticket.service.uuid4",
         lambda: fixed_uuid,
     )
 

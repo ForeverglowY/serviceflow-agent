@@ -1,8 +1,8 @@
 import json
 from pathlib import Path
 
-from evaluate_retrieval import is_retrieval_hit
-from rag_models import RetrievalEvalCase
+from scripts.evaluate_retrieval import is_retrieval_hit
+from serviceflow.rag.models import RetrievalEvalCase
 
 
 def test_is_retrieval_hit_accepts_any_expected_chunk_by_default() -> None:

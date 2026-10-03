@@ -1,11 +1,19 @@
-# ServiceFlow Agent
+# ServiceFlow：智能客服与售后工单 Agent
 
-基于 FastAPI、DeepSeek Tool Calling、PostgreSQL 和 pgvector 实现的智能客服 Agent。它能够理解客户问题，自主选择订单或物流查询工具，也能检索售后政策并生成带可信来源的 RAG 回答。
+基于 FastAPI、LangGraph、DeepSeek、PostgreSQL 和 pgvector 实现的电商客服应用。支持订单与物流工具查询、带来源的政策 RAG、多轮售后申请收集、业务规则预评估、用户确认审计和人工待处理任务登记。
+
+这是一个持续开发中的个人项目，使用模拟订单、商品和售后政策。工单登记不代表退款或换货获批；当前尚未实现真实退款执行或人工客服操作界面。
 
 ## 当前功能
 
 - 订单、商品和物流信息查询
 - 客服工单创建、预览与查询
+- LangGraph 意图分流、内层工具循环与多轮工单子图
+- PostgreSQL Checkpointer 保存会话状态，按 thread_id 恢复对话
+- 售后字段追问、申请修改、取消、摘要与明确确认
+- 普通 Python 退换货预评估：订单状态、商品类别、签收日期和专项审核标记
+- 工单与确认快照在同一数据库事务中写入
+- 人工待处理队列登记与重复登记防重
 - 客户消息结构化意图识别
 - DeepSeek Tool Calling
 - 订单与物流多工具选择和执行
@@ -27,6 +35,7 @@
 - Python 3.13
 - FastAPI、Uvicorn
 - Pydantic、Pydantic Settings
+- LangGraph、PostgreSQL Checkpointer
 - DeepSeek V4 Flash（OpenAI 兼容 API）
 - SQLAlchemy 2、Psycopg 3
 - PostgreSQL 17
@@ -37,6 +46,32 @@
 - uv
 
 ## Agent 工作流程
+
+外层工作流根据用户意图区分业务查询、政策咨询和售后申请；活跃售后会话优先恢复工单收集状态。
+
+```mermaid
+flowchart TD
+    U[客户消息] --> E{是否已有活跃售后申请}
+    E -->|是| T[恢复工单子图]
+    E -->|否| I[意图分类]
+    I --> Q[订单与物流工具 Agent]
+    I --> R[政策 RAG]
+    I --> T
+    I --> F[安全回退与需求引导]
+    T --> C[收集与合并申请字段]
+    C --> M{字段是否齐全}
+    M -->|否| A[追问缺失字段]
+    M -->|是| B[读取业务事实并执行预评估规则]
+    B --> S[展示摘要等待用户确认]
+    S -->|修改| C
+    S -->|取消| X[结束申请]
+    S -->|确认| W[同一事务保存工单与确认快照]
+    W --> H{是否需要人工核验}
+    H -->|是| P[登记人工待处理任务]
+    H -->|否| D[返回工单信息]
+```
+
+业务查询分支内部的工具循环：
 
 ```mermaid
 flowchart TD
@@ -73,28 +108,29 @@ flowchart TD
 ## 项目结构
 
 ```text
-agent_service.py       Agent 多轮循环、工具编排和异常转换
-agent_tools.py         业务工具、工具适配器和工具注册表
-llm_service.py         DeepSeek 客户端、工具 Schema 和意图识别
-llm_models.py          意图、Agent 请求响应及工具参数结果模型
-api.py                 FastAPI 路由
-models.py              Pydantic 业务模型
-db_models.py           SQLAlchemy ORM 表模型
-database.py            PostgreSQL Engine 和超时配置
-seed_data.py           幂等测试数据初始化
-compose.yaml           PostgreSQL 本地开发环境
-policy_loader.py       Markdown政策加载和章节切分
-policy_indexer.py      Embedding生成与幂等向量索引
-database_vector_retriever.py  pgvector语义检索与元数据过滤
-hybrid_retriever.py    关键词和向量RRF融合实验
-rag_service.py         RAG上下文、结构化回答、引用校验和格式化
-rag_models.py          政策、评测和RAG回答模型
-knowledge/policies/    20篇模拟售后政策
-evaluation/            检索、回答和安全验收资料
-tests/                 自动化测试
+serviceflow/
+├── api.py              FastAPI 路由和 HTTP 异常转换
+├── settings.py         环境变量配置
+├── models.py           Pydantic 业务模型
+├── data_loader.py      本地 JSON 初始化数据加载
+├── db/                 PostgreSQL Engine 和 SQLAlchemy ORM 模型
+├── llm/                DeepSeek 客户端、Tool Schema 和结构化模型
+├── agent/              Agent 多轮编排、业务工具和工具注册表
+├── ticket/             业务规则、工单与确认写入、人工待处理登记
+└── rag/                文档、索引、检索、融合和可信回答生成
+scripts/
+├── seed_data.py        幂等测试数据初始化
+├── evaluate_retrieval.py  检索评测入口
+└── demos/              分阶段学习和手工验证程序
+data/                   订单、商品和物流的本地初始化数据
+knowledge/policies/     20 篇模拟售后政策
+evaluation/             检索、回答和安全验收资料
+tests/                  自动化测试
+migrations/             已有数据库的增量 SQL 迁移
+compose.yaml            PostgreSQL 本地开发环境
 ```
 
-根目录中的 `*_demo.py` 是分阶段学习和手工验证代码，不属于正式 API 调用链。
+`serviceflow/` 是正式应用包；`scripts/` 是命令行入口和演示代码，不属于 FastAPI 的正式调用链。
 
 ## 本地运行
 
@@ -133,6 +169,7 @@ DEEPSEEK_MAX_RETRIES=2
 DATABASE_CONNECT_TIMEOUT_SECONDS=5
 DATABASE_POOL_TIMEOUT_SECONDS=5
 DATABASE_STATEMENT_TIMEOUT_MS=5000
+CHECKPOINT_DATABASE_URL=postgresql://agent:agent_password@localhost:5432/agent_study
 ```
 
 `.env` 已被 Git 忽略，不要提交或公开真实 API Key。
@@ -157,17 +194,19 @@ Password: agent_password
 ### 4. 建表和初始化数据
 
 ```bash
-uv run python database.py
-uv run python seed_data.py
-uv run python policy_indexer.py
+uv run python -m serviceflow.db.database
+uv run python -m scripts.seed_data
+uv run python -m serviceflow.rag.indexer
 ```
 
 初始化程序具有幂等性，重复执行不会重复插入已有订单、商品、物流和未变化的政策片段。
 
+首次建库由 ORM 创建当前业务表；API 启动时会通过 `PostgresSaver.setup()` 创建 checkpoint 表。已有旧数据库需要按文件名顺序执行 `migrations/` 下的 SQL，`create_all()` 不会修改已有表结构。
+
 ### 5. 启动 API
 
 ```bash
-uv run uvicorn api:app --reload
+uv run uvicorn serviceflow.api:app --reload
 ```
 
 服务地址：
@@ -194,9 +233,12 @@ Agent 请求示例：
 
 ```json
 {
-  "message": "帮我查询订单20260721001，并看看快递到哪里了"
+  "message": "帮我查询订单20260721001，并看看快递到哪里了",
+  "thread_id": null
 }
 ```
+
+多轮售后示例：第一轮发送“订单20260721001的耳机左耳没有声音，我想换货”，接口返回确认摘要和 `thread_id`。第二轮发送“确认”并传入同一个 `thread_id`，系统保存工单和确认快照，并在需要核验时登记人工待处理任务。仅咨询“可以退货吗”会进入政策问答，明确要求办理售后才进入工单流程。
 
 ## 测试
 
@@ -209,15 +251,15 @@ uv run python -m pytest -q
 当前基线：
 
 ```text
-113 passed
+236 passed
 ```
 
-测试通过 Mock 隔离真实 DeepSeek 请求，不依赖网络、账户余额或模型输出的随机性。
+测试基线验证于 2026-10-03。单元与工作流测试通过 Mock 隔离真实 DeepSeek 和数据库调用；真实数据库事务与 Swagger 联调另行验证，不把模拟测试结果视为生产审批效果。
 
 检索评测：
 
 ```bash
-uv run python evaluate_retrieval.py
+uv run python -m scripts.evaluate_retrieval
 ```
 
 当前知识库扩容基线为20篇政策、80个章节片段和20条问题，`Hit@5 = 19/20（95.00%）`。唯一失败是需要同时召回两类政策的多方面问题，相关条款位于第6名；该结果保留为后续查询拆分、多样化召回或 Reranker 的改进基线。
@@ -241,12 +283,14 @@ uv run python evaluate_retrieval.py
 - 只检索状态有效且已经生效的政策
 - 索引同步跟踪正文、模型、版本、日期、状态和过滤元数据变化
 
-## 后续计划
+## 当前边界与后续计划
 
+- 创建工单的提交幂等键尚在开发中；人工任务登记防重不等于工单创建防重
+- 工单写入和人工任务登记为两个事务，跨步骤失败恢复尚未完成
+- 用户身份目前使用 USER-DEMO，尚无登录鉴权、人工领取或审批界面
+- 售后规则是保守预评估，未知的拆封和质检结果需要人工核验
 - 将混合检索或 Reranker 接入正式 RAG 流程
 - 增加查询拆分和结果多样化，改善多政策问题召回
 - 商品查询、退款资格检查和工单处理工具
-- 使用 LangGraph 管理复杂客服工作流
-- 写操作前的用户确认和人工升级
 - 自动评测集、调用链追踪和成本统计
 - Docker Compose 一键启动完整应用

@@ -1,0 +1,19 @@
+name: Tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    env:
+      DEEPSEEK_API_KEY: test-api-key
+      CHECKPOINT_DATABASE_URL: postgresql://agent:agent_password@localhost:5432/agent_study
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - run: uv sync --locked --python 3.13
+      - run: uv run python -m pytest -q

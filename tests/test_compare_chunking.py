@@ -6,9 +6,9 @@ import numpy as np
 import pytest
 from sentence_transformers import SentenceTransformer
 
-import compare_chunking
-from compare_chunking import evaluate_strategy
-from rag_models import PolicyChunk, RetrievalEvalCase
+from scripts.demos import compare_chunking
+from scripts.demos.compare_chunking import evaluate_strategy
+from serviceflow.rag.models import PolicyChunk, RetrievalEvalCase
 
 
 def make_chunk(chunk_id: str, policy_id: str) -> PolicyChunk:

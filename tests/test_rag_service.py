@@ -7,9 +7,9 @@ import pytest
 from openai import OpenAIError
 from sentence_transformers import SentenceTransformer
 
-import rag_service
-from rag_models import PolicyChunk, RAGAnswerResult
-from rag_service import (
+from serviceflow.rag import service as rag_service
+from serviceflow.rag.models import PolicyChunk, RAGAnswerResult
+from serviceflow.rag.service import (
     RAG_SYSTEM_MESSAGE,
     RAGServiceError,
     answer_policy_question,

@@ -8,9 +8,11 @@ from openai.types.chat import ChatCompletionMessageFunctionToolCall
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.exc import TimeoutError as SQLAlchemyTimeoutError
 
-import agent_service
-from agent_service import AgentServiceError, run_customer_agent
-from llm_models import GetOrderResult
+from serviceflow.agent import service as agent_service
+from serviceflow.agent import runtime as agent_runtime
+from serviceflow.agent.runtime import AgentServiceError
+from serviceflow.agent.service import run_customer_agent
+from serviceflow.llm.models import GetOrderResult
 
 
 def make_response(message: object) -> SimpleNamespace:
@@ -98,7 +100,7 @@ def test_agent_returns_direct_answer_without_calling_tool(
         )
     )
     execute_tool_mock = Mock()
-    monkeypatch.setattr(agent_service, "_call_deepseek", call_mock)
+    monkeypatch.setattr(agent_service, "call_deepseek", call_mock)
     monkeypatch.setattr(
         agent_service,
         "execute_tool",
@@ -138,7 +140,7 @@ def test_agent_executes_get_order_and_returns_final_answer(
     execute_tool_mock = Mock(
         return_value=tool_result.model_dump_json()
     )
-    monkeypatch.setattr(agent_service, "_call_deepseek", call_mock)
+    monkeypatch.setattr(agent_service, "call_deepseek", call_mock)
     monkeypatch.setattr(
         agent_service,
         "execute_tool",
@@ -171,7 +173,7 @@ def test_agent_returns_not_found_result_to_model(
             make_response(make_direct_message("没有找到该订单。")),
         ]
     )
-    monkeypatch.setattr(agent_service, "_call_deepseek", call_mock)
+    monkeypatch.setattr(agent_service, "call_deepseek", call_mock)
     monkeypatch.setattr(
         agent_service,
         "execute_tool",
@@ -204,7 +206,7 @@ def test_agent_executes_multiple_tools_in_one_round(
             '{"order_id":"20260721001","logistics_status":"运输中"}',
         ]
     )
-    monkeypatch.setattr(agent_service, "_call_deepseek", call_mock)
+    monkeypatch.setattr(agent_service, "call_deepseek", call_mock)
     monkeypatch.setattr(
         agent_service,
         "execute_tool",
@@ -236,7 +238,7 @@ def test_agent_stops_after_maximum_tool_rounds(
         ]
     )
     execute_tool_mock = Mock(return_value='{"result":"ok"}')
-    monkeypatch.setattr(agent_service, "_call_deepseek", call_mock)
+    monkeypatch.setattr(agent_service, "call_deepseek", call_mock)
     monkeypatch.setattr(
         agent_service,
         "execute_tool",
@@ -260,7 +262,7 @@ def test_call_deepseek_converts_timeout_error(
         request=Request("POST", "https://api.deepseek.com/chat/completions")
     )
     monkeypatch.setattr(
-        agent_service.CLIENT.chat.completions,
+        agent_runtime.CLIENT.chat.completions,
         "create",
         Mock(side_effect=timeout_error),
     )
@@ -269,7 +271,7 @@ def test_call_deepseek_converts_timeout_error(
         AgentServiceError,
         match="DeepSeek请求超时",
     ) as exc_info:
-        agent_service._call_deepseek([])
+        agent_runtime.call_deepseek([])
 
     assert exc_info.value.__cause__ is timeout_error
 
@@ -280,7 +282,7 @@ def test_agent_converts_database_pool_timeout(
     timeout_error = SQLAlchemyTimeoutError("模拟连接池超时")
     monkeypatch.setattr(
         agent_service,
-        "_call_deepseek",
+        "call_deepseek",
         Mock(return_value=make_response(make_tool_message())),
     )
     monkeypatch.setattr(
@@ -304,7 +306,7 @@ def test_agent_converts_database_error(
     database_error = SQLAlchemyError("模拟数据库错误")
     monkeypatch.setattr(
         agent_service,
-        "_call_deepseek",
+        "call_deepseek",
         Mock(return_value=make_response(make_tool_message())),
     )
     monkeypatch.setattr(
@@ -327,7 +329,7 @@ def test_agent_rejects_unknown_tool(
 ) -> None:
     monkeypatch.setattr(
         agent_service,
-        "_call_deepseek",
+        "call_deepseek",
         Mock(return_value=make_response(make_tool_message(name="delete_order"))),
     )
 
@@ -343,7 +345,7 @@ def test_agent_rejects_invalid_tool_arguments(
 ) -> None:
     monkeypatch.setattr(
         agent_service,
-        "_call_deepseek",
+        "call_deepseek",
         Mock(
             return_value=make_response(
                 make_tool_message(arguments='{"unknown":"value"}')
@@ -380,7 +382,7 @@ def test_agent_rejects_empty_model_content(
 ) -> None:
     monkeypatch.setattr(
         agent_service,
-        "_call_deepseek",
+        "call_deepseek",
         Mock(side_effect=responses),
     )
     monkeypatch.setattr(

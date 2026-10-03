@@ -5,9 +5,9 @@ import numpy as np
 import pytest
 from sentence_transformers import SentenceTransformer
 
-import database_vector_retriever
-from database_vector_retriever import retrieve_from_database
-from db_models import PolicyChunkTable
+from serviceflow.db.models import PolicyChunkTable
+from serviceflow.rag import database_retriever as database_vector_retriever
+from serviceflow.rag.database_retriever import retrieve_from_database
 
 
 class FakeEmbeddingModel:

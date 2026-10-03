@@ -1,0 +1,6 @@
+BEGIN;
+
+ALTER TABLE products
+    ADD COLUMN IF NOT EXISTS requires_special_review BOOLEAN NOT NULL DEFAULT FALSE;
+
+COMMIT;

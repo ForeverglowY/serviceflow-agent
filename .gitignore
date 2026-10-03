@@ -4,5 +4,12 @@ __pycache__/
 *.py[cod]
 .DS_Store
 .env
+.env.*
+!.env.example
+.pytest_cache/
+.ruff_cache/
+/1.json
 agent_study_before_pgvector.sql
 compose.yaml.before-pgvector
+outputs/workflow_traces/
+**/outputs/workflow_traces/

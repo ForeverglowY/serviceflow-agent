@@ -3,8 +3,8 @@ from pathlib import Path
 
 import pytest
 
-from hybrid_retriever import fuse_rankings, reciprocal_rank_score
-from rag_models import PolicyChunk
+from serviceflow.rag.hybrid_retriever import fuse_rankings, reciprocal_rank_score
+from serviceflow.rag.models import PolicyChunk
 
 
 def make_chunk(chunk_id: str) -> PolicyChunk:

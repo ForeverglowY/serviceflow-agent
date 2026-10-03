@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from policy_loader import (
+from serviceflow.rag.loader import (
     load_policies,
     load_policy,
     policy_to_document_chunk,

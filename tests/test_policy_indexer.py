@@ -3,15 +3,15 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from embedding_demo import MODEL_NAME
-from policy_indexer import (
+from serviceflow.rag.embeddings import MODEL_NAME
+from serviceflow.rag.indexer import (
     PolicyIndexState,
     build_policy_chunk_record,
     find_chunks_to_index,
 )
-from policy_loader import load_policy, split_policy
-from rag_models import PolicyChunk
-from rag_utils import calculate_content_hash
+from serviceflow.rag.loader import load_policy, split_policy
+from serviceflow.rag.models import PolicyChunk
+from serviceflow.rag.utils import calculate_content_hash
 
 
 POLICY_PATH = Path(

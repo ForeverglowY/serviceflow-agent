@@ -4,9 +4,10 @@ from unittest.mock import Mock
 import pytest
 from openai import OpenAIError
 
-import llm_service
-from llm_models import CustomerIntent
-from llm_service import LLMServiceError, classify_intent
+from serviceflow.llm import service as llm_service
+from serviceflow.llm.models import CustomerIntent
+from serviceflow.llm.service import LLMServiceError, classify_intent, classify_return_reason
+from serviceflow.ticket.rules import ReturnReason
 
 
 def make_response(content: str | None) -> SimpleNamespace:
@@ -130,5 +131,68 @@ def test_classify_intent_converts_openai_error(
         match="DeepSeek服务调用失败",
     ) as exc_info:
         classify_intent("查询订单")
+
+    assert exc_info.value.__cause__ is api_error
+
+
+@pytest.mark.parametrize(
+    "issue_description,requested_action,model_reason,expected_reason",
+    [
+        ("左耳无声", "换货", "quality_issue", ReturnReason.QUALITY_ISSUE),
+        ("商品没问题，只是不想要了", "退货", "no_reason", ReturnReason.NO_REASON),
+        ("帮我处理一下售后", "不确定", "other", ReturnReason.OTHER),
+    ],
+)
+def test_classify_return_reason_uses_issue_and_action(
+    monkeypatch: pytest.MonkeyPatch,
+    issue_description: str,
+    requested_action: str,
+    model_reason: str,
+    expected_reason: ReturnReason,
+) -> None:
+    create_mock = Mock(return_value=make_response(
+        '{"return_reason": "' + model_reason + '"}'
+    ))
+    monkeypatch.setattr(llm_service.CLIENT.chat.completions, "create", create_mock)
+
+    result = classify_return_reason(
+        issue_description=issue_description,
+        requested_action=requested_action,
+    )
+
+    assert result.return_reason is expected_reason
+    messages = create_mock.call_args.kwargs["messages"]
+    assert issue_description in messages[1]["content"]
+    assert requested_action in messages[1]["content"]
+    assert "order_id" not in messages[0]["content"]
+
+
+@pytest.mark.parametrize("content", [None, "", "not json", '{"return_reason": "unknown"}'])
+def test_classify_return_reason_rejects_invalid_content(
+    monkeypatch: pytest.MonkeyPatch,
+    content: str | None,
+) -> None:
+    monkeypatch.setattr(
+        llm_service.CLIENT.chat.completions,
+        "create",
+        Mock(return_value=make_response(content)),
+    )
+
+    with pytest.raises(LLMServiceError):
+        classify_return_reason(issue_description="左耳无声", requested_action="换货")
+
+
+def test_classify_return_reason_converts_openai_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    api_error = OpenAIError("模拟DeepSeek调用失败")
+    monkeypatch.setattr(
+        llm_service.CLIENT.chat.completions,
+        "create",
+        Mock(side_effect=api_error),
+    )
+
+    with pytest.raises(LLMServiceError) as exc_info:
+        classify_return_reason(issue_description="左耳无声", requested_action="换货")
 
     assert exc_info.value.__cause__ is api_error

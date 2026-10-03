@@ -5,8 +5,8 @@ import numpy as np
 import pytest
 from sentence_transformers import SentenceTransformer
 
-from policy_loader import load_policy, split_policy
-from vector_retriever import retrieve_by_vector
+from serviceflow.rag.loader import load_policy, split_policy
+from serviceflow.rag.vector_retriever import retrieve_by_vector
 
 
 POLICY_PATH = Path(
