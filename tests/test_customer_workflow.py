@@ -1,10 +1,10 @@
-from unittest.mock import Mock
+from unittest.mock import ANY, Mock
 from uuid import UUID
 
 import pytest
 from langgraph.checkpoint.memory import InMemorySaver
-from serviceflow.agent import ticket_collection
 
+from serviceflow.agent import ticket_collection
 from serviceflow.agent import workflow
 from serviceflow.agent.runtime import AgentServiceError
 from serviceflow.llm.models import CustomerIntent, IntentResult
@@ -20,6 +20,32 @@ def stub_return_assessment(monkeypatch):
         decision=TicketEligibilityDecision.NEED_MANUAL_REVIEW,
         reason="疑似质量问题，需要检测",
     )))
+
+
+@pytest.mark.parametrize("next_nodes,expected", [
+    ((), "classify"),
+    (("enqueue_manual_review",), None),
+])
+def test_entry_checks_current_thread_and_blocks_pending_execution(monkeypatch, next_nodes, expected):
+    from types import SimpleNamespace
+
+    state = make_state()
+    state["thread_id"] = "current-customer-thread"
+    state["user_message"] = "不登记了"
+    graph = Mock()
+    graph.get_state.return_value = SimpleNamespace(values={"status": "created"}, next=next_nodes)
+    active = Mock(return_value=False)
+    monkeypatch.setattr(workflow, "is_ticket_collection_active", active)
+    if next_nodes:
+        with pytest.raises(ticket_collection.TicketRecoveryRequiredError):
+            workflow.route_customer_entry(state, ticket_graph=graph)
+        active.assert_not_called()
+    else:
+        assert workflow.route_customer_entry(state, ticket_graph=graph) == expected
+    graph.get_state.assert_called_once_with(config={
+        "configurable": {"thread_id": "current-customer-thread"},
+    })
+    graph.invoke.assert_not_called()
 
 
 def make_state(intent_result=None) -> workflow.CustomerWorkflowState:
@@ -98,9 +124,10 @@ def test_classification_returns_only_intent_update(monkeypatch):
     monkeypatch.setattr(workflow, "classify_intent", classify)
     state = make_state()
 
-    update = workflow.classify_customer_intent_node(state)
+    classifier = Mock()
+    update = workflow.classify_customer_intent_node(state, classifier=classifier)
 
-    classify.assert_called_once_with("查询订单20260721001")
+    classify.assert_called_once_with(user_text="查询订单20260721001", classifier=classifier)
     assert update == {"intent_result": expected, "steps": ["classify_intent"]}
     assert state == make_state()
 
@@ -110,7 +137,7 @@ def test_classification_converts_service_error(monkeypatch):
     monkeypatch.setattr(workflow, "classify_intent", Mock(side_effect=original))
 
     with pytest.raises(AgentServiceError, match="客户意图识别失败") as captured:
-        workflow.classify_customer_intent_node(make_state())
+        workflow.classify_customer_intent_node(make_state(), classifier=Mock())
 
     assert captured.value.__cause__ is original
 
@@ -132,14 +159,14 @@ def test_compiled_workflow_runs_only_selected_branch(monkeypatch, intent, branch
     agent = Mock(return_value=("工具回答", "returned-thread"))
     rag = Mock(return_value="政策回答")
     monkeypatch.setattr(workflow, "classify_intent", classify)
-    monkeypatch.setattr(workflow, "run_customer_agent_graph", agent)
+    monkeypatch.setattr(workflow, "run_langchain_agent_graph", agent)
     monkeypatch.setattr(workflow, "answer_policy_question", rag)
     inner_graph = Mock()
     embedding_model = Mock()
     ticket_graph = ticket_collection.build_ticket_collection_graph(InMemorySaver())
     ticket = Mock(return_value={"answer": "工单20260721001的追问"})
     monkeypatch.setattr(workflow, "run_ticket_collection_turn", ticket)
-    graph = workflow.build_customer_workflow(inner_graph, embedding_model, ticket_graph)
+    graph = workflow.build_customer_workflow(inner_graph, embedding_model, ticket_graph, classifier=Mock())
     state = make_state()
     state["thread_id"] = "existing-thread"
 
@@ -148,7 +175,7 @@ def test_compiled_workflow_runs_only_selected_branch(monkeypatch, intent, branch
 
     assert [name for update in updates for name in update] == ["classify_intent", branch]
     assert updates[0]["classify_intent"] == {"intent_result": intent_result, "steps": ["classify_intent"]}
-    classify.assert_called_once_with(state["user_message"])
+    classify.assert_called_once_with(user_text=state["user_message"], classifier=ANY)
     final_update = updates[-1][branch]
     assert final_update["steps"] == [branch]
     if branch == "handle_tools":
@@ -165,7 +192,8 @@ def test_compiled_workflow_runs_only_selected_branch(monkeypatch, intent, branch
         rag.assert_not_called()
     if branch == "handle_ticket":
         assert "20260721001" in final_update["answer"]
-        ticket.assert_called_once_with(user_message=state["user_message"], graph=ticket_graph, thread_id="existing-thread")
+        ticket.assert_called_once_with(user_message=state["user_message"], graph=ticket_graph,
+                                       thread_id="existing-thread")
     else:
         ticket.assert_not_called()
     if branch == "handle_fallback":
@@ -182,9 +210,10 @@ def test_ticket_without_order_id_records_complete_path(monkeypatch):
         intent=CustomerIntent.CREATE_TICKET, confidence=0.9, reason="申请工单但未提供订单号",
     )
     monkeypatch.setattr(workflow, "classify_intent", Mock(return_value=intent_result))
-    monkeypatch.setattr(ticket_collection, "extract_ticket_fields", Mock(return_value=ticket_collection.TicketExtraction()))
+    monkeypatch.setattr(ticket_collection, "extract_ticket_fields",
+                        Mock(return_value=ticket_collection.TicketExtraction()))
     ticket_graph = ticket_collection.build_ticket_collection_graph(InMemorySaver())
-    graph = workflow.build_customer_workflow(Mock(), Mock(), ticket_graph)
+    graph = workflow.build_customer_workflow(Mock(), Mock(), ticket_graph, classifier=Mock())
     state = make_state()
     state["thread_id"] = "missing-order"
     result = graph.invoke(state)
@@ -198,10 +227,10 @@ def test_compiled_workflow_stops_when_classification_fails(monkeypatch):
     monkeypatch.setattr(workflow, "classify_intent", Mock(side_effect=original))
     agent = Mock()
     rag = Mock()
-    monkeypatch.setattr(workflow, "run_customer_agent_graph", agent)
+    monkeypatch.setattr(workflow, "run_langchain_agent_graph", agent)
     monkeypatch.setattr(workflow, "answer_policy_question", rag)
     ticket_graph = ticket_collection.build_ticket_collection_graph(InMemorySaver())
-    graph = workflow.build_customer_workflow(Mock(), Mock(), ticket_graph)
+    graph = workflow.build_customer_workflow(Mock(), Mock(), ticket_graph, classifier=Mock())
 
     with pytest.raises(AgentServiceError, match="客户意图识别失败") as captured:
         state = make_state()
@@ -238,7 +267,7 @@ def test_active_ticket_skips_classification_on_followup_turns(monkeypatch, caplo
         ticket_collection.TicketExtraction(requested_action="换货"),
     ]))
     ticket_graph = ticket_collection.build_ticket_collection_graph(InMemorySaver())
-    graph = workflow.build_customer_workflow(Mock(), Mock(), ticket_graph)
+    graph = workflow.build_customer_workflow(Mock(), Mock(), ticket_graph, classifier=Mock())
     thread_id = None
     ids = []
     with caplog.at_level("INFO", logger=workflow.__name__):
@@ -246,7 +275,7 @@ def test_active_ticket_skips_classification_on_followup_turns(monkeypatch, caplo
             answer, thread_id = workflow.run_customer_workflow(message, graph, thread_id)
             ids.append(thread_id)
     assert len(set(ids)) == 1
-    classify.assert_called_once_with("帮我创建售后工单")
+    classify.assert_called_once_with(user_text="帮我创建售后工单", classifier=ANY)
     assert "尚未创建工单" in answer
     saved = ticket_graph.get_state({"configurable": {"thread_id": thread_id}}).values
     assert saved["order_id"] == "20260721001"
@@ -265,7 +294,7 @@ def test_active_ticket_can_be_canceled_without_reclassification_or_extraction(mo
     monkeypatch.setattr(workflow, "classify_intent", classify)
     monkeypatch.setattr(ticket_collection, "extract_ticket_fields", extract)
     ticket_graph = ticket_collection.build_ticket_collection_graph(InMemorySaver())
-    graph = workflow.build_customer_workflow(Mock(), Mock(), ticket_graph)
+    graph = workflow.build_customer_workflow(Mock(), Mock(), ticket_graph, classifier=Mock())
 
     first_answer, thread_id = workflow.run_customer_workflow("帮订单20260721001创建售后工单", graph)
     second_answer, second_thread_id = workflow.run_customer_workflow("取消售后", graph, thread_id)
@@ -273,7 +302,7 @@ def test_active_ticket_can_be_canceled_without_reclassification_or_extraction(mo
     assert second_thread_id == thread_id
     assert "请描述商品遇到的具体问题" in first_answer
     assert "已取消本次售后信息收集" in second_answer
-    classify.assert_called_once_with("帮订单20260721001创建售后工单")
+    classify.assert_called_once_with(user_text="帮订单20260721001创建售后工单", classifier=ANY)
     extract.assert_called_once_with(user_message="帮订单20260721001创建售后工单", previous_question=None)
     saved = ticket_graph.get_state({"configurable": {"thread_id": thread_id}}).values
     assert saved["status"] == ticket_collection.TicketCollectionStatus.CANCELED.value
@@ -302,7 +331,7 @@ def test_active_ticket_creates_ticket_after_confirmation_without_reclassificatio
     monkeypatch.setattr(ticket_collection, "extract_ticket_fields", extract)
     monkeypatch.setattr(ticket_collection, "create_ticket_service", create_ticket)
     ticket_graph = ticket_collection.build_ticket_collection_graph(InMemorySaver())
-    graph = workflow.build_customer_workflow(Mock(), Mock(), ticket_graph)
+    graph = workflow.build_customer_workflow(Mock(), Mock(), ticket_graph, classifier=Mock())
 
     thread_id = None
     for message in ["帮我创建售后工单", "左耳无声", "换货"]:
@@ -313,7 +342,7 @@ def test_active_ticket_creates_ticket_after_confirmation_without_reclassificatio
     assert "尚未创建工单" in answer
     assert "已为您创建售后工单" in final_answer
     assert "TICKET-WORKFLOW-001" in final_answer
-    classify.assert_called_once_with("帮我创建售后工单")
+    classify.assert_called_once_with(user_text="帮我创建售后工单", classifier=ANY)
     assert extract.call_count == 3
     create_ticket.assert_called_once()
     saved = ticket_graph.get_state({"configurable": {"thread_id": thread_id}}).values
@@ -339,7 +368,7 @@ def test_tools_node_forwards_question_without_current_order_id(monkeypatch, thre
     graph = Mock()
     returned_id = thread_id or "generated-conversation"
     agent = Mock(return_value=("工具Agent的回答或追问", returned_id))
-    monkeypatch.setattr(workflow, "run_customer_agent_graph", agent)
+    monkeypatch.setattr(workflow, "run_langchain_agent_graph", agent)
 
     update = workflow.handle_tools_node(state, agent_graph=graph)
 
@@ -352,7 +381,7 @@ def test_tools_node_forwards_question_without_current_order_id(monkeypatch, thre
 
 def test_tools_node_propagates_agent_failure(monkeypatch):
     original = AgentServiceError("工具执行失败")
-    monkeypatch.setattr(workflow, "run_customer_agent_graph", Mock(side_effect=original))
+    monkeypatch.setattr(workflow, "run_langchain_agent_graph", Mock(side_effect=original))
 
     with pytest.raises(AgentServiceError) as captured:
         workflow.handle_tools_node(make_state(), agent_graph=Mock())

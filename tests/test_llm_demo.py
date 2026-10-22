@@ -27,7 +27,7 @@ def make_response(content: str | None) -> SimpleNamespace:
 
 
 def test_classify_intent_returns_valid_result(
-    monkeypatch: pytest.MonkeyPatch,
+        monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     create_mock = Mock(
         return_value=make_response(
@@ -68,7 +68,7 @@ def test_classify_intent_returns_valid_result(
 
 
 def test_classify_intent_rejects_empty_content(
-    monkeypatch: pytest.MonkeyPatch,
+        monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
         llm_service.CLIENT.chat.completions,
@@ -77,8 +77,8 @@ def test_classify_intent_rejects_empty_content(
     )
 
     with pytest.raises(
-        LLMServiceError,
-        match="DeepSeek没有返回内容",
+            LLMServiceError,
+            match="DeepSeek没有返回内容",
     ):
         classify_intent("查询订单")
 
@@ -98,8 +98,8 @@ def test_classify_intent_rejects_empty_content(
     ],
 )
 def test_classify_intent_rejects_invalid_structured_output(
-    monkeypatch: pytest.MonkeyPatch,
-    content: str,
+        monkeypatch: pytest.MonkeyPatch,
+        content: str,
 ) -> None:
     monkeypatch.setattr(
         llm_service.CLIENT.chat.completions,
@@ -108,8 +108,8 @@ def test_classify_intent_rejects_invalid_structured_output(
     )
 
     with pytest.raises(
-        LLMServiceError,
-        match="DeepSeek返回内容格式错误",
+            LLMServiceError,
+            match="DeepSeek返回内容格式错误",
     ) as exc_info:
         classify_intent("测试消息")
 
@@ -117,7 +117,7 @@ def test_classify_intent_rejects_invalid_structured_output(
 
 
 def test_classify_intent_converts_openai_error(
-    monkeypatch: pytest.MonkeyPatch,
+        monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     api_error = OpenAIError("模拟DeepSeek调用失败")
     monkeypatch.setattr(
@@ -127,8 +127,8 @@ def test_classify_intent_converts_openai_error(
     )
 
     with pytest.raises(
-        LLMServiceError,
-        match="DeepSeek服务调用失败",
+            LLMServiceError,
+            match="DeepSeek服务调用失败",
     ) as exc_info:
         classify_intent("查询订单")
 
@@ -144,11 +144,11 @@ def test_classify_intent_converts_openai_error(
     ],
 )
 def test_classify_return_reason_uses_issue_and_action(
-    monkeypatch: pytest.MonkeyPatch,
-    issue_description: str,
-    requested_action: str,
-    model_reason: str,
-    expected_reason: ReturnReason,
+        monkeypatch: pytest.MonkeyPatch,
+        issue_description: str,
+        requested_action: str,
+        model_reason: str,
+        expected_reason: ReturnReason,
 ) -> None:
     create_mock = Mock(return_value=make_response(
         '{"return_reason": "' + model_reason + '"}'
@@ -169,8 +169,8 @@ def test_classify_return_reason_uses_issue_and_action(
 
 @pytest.mark.parametrize("content", [None, "", "not json", '{"return_reason": "unknown"}'])
 def test_classify_return_reason_rejects_invalid_content(
-    monkeypatch: pytest.MonkeyPatch,
-    content: str | None,
+        monkeypatch: pytest.MonkeyPatch,
+        content: str | None,
 ) -> None:
     monkeypatch.setattr(
         llm_service.CLIENT.chat.completions,
@@ -183,7 +183,7 @@ def test_classify_return_reason_rejects_invalid_content(
 
 
 def test_classify_return_reason_converts_openai_error(
-    monkeypatch: pytest.MonkeyPatch,
+        monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     api_error = OpenAIError("模拟DeepSeek调用失败")
     monkeypatch.setattr(

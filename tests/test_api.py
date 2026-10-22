@@ -20,18 +20,88 @@ client = TestClient(app)
 @pytest.fixture(autouse=True)
 def isolated_workflow_graph(monkeypatch: pytest.MonkeyPatch):
     from langgraph.checkpoint.memory import InMemorySaver
-    from serviceflow.agent.graph import build_customer_agent_graph
+    from serviceflow.agent.langchain_graph import build_langchain_agent_graph
     from serviceflow.agent.ticket_collection import build_ticket_collection_graph
     from serviceflow.agent.workflow import build_customer_workflow
 
     # 路由单测使用独立内存图，不依赖 PostgreSQL 生命周期。
-    agent_graph = build_customer_agent_graph(InMemorySaver())
+    monkeypatch.setattr("serviceflow.agent.langchain_graph.create_chat_model", Mock())
+    agent_graph = build_langchain_agent_graph(InMemorySaver())
     ticket_graph = build_ticket_collection_graph(InMemorySaver())
-    workflow_graph = build_customer_workflow(agent_graph, Mock(), ticket_graph)
+    classifier = Mock()
+    workflow_graph = build_customer_workflow(agent_graph, Mock(), ticket_graph, classifier=classifier)
+    monkeypatch.setattr(app.state, "classifier", classifier, raising=False)
     monkeypatch.setattr(app.state, "agent_graph", agent_graph, raising=False)
     monkeypatch.setattr(app.state, "ticket_graph", ticket_graph, raising=False)
     monkeypatch.setattr(app.state, "workflow_graph", workflow_graph, raising=False)
     return workflow_graph
+
+
+def test_chat_returns_409_when_ticket_recovery_is_required(monkeypatch):
+    from serviceflow.agent.ticket_collection import TicketRecoveryRequiredError
+
+    message = "售后申请存在未完成步骤，请通过重试入口恢复"
+    workflow = Mock(side_effect=TicketRecoveryRequiredError(message))
+    monkeypatch.setattr("serviceflow.api.run_customer_workflow", workflow)
+    response = client.post("/agent/chat", json={
+        "message": "不登记了", "thread_id": "recovery-test",
+    })
+    assert response.status_code == 409
+    assert response.json() == {"detail": message}
+    workflow.assert_called_once()
+
+
+def test_resume_api_succeeds_without_message_body(monkeypatch):
+    resume = Mock(return_value={"answer": "已登记人工核验，等待处理"})
+    monkeypatch.setattr("serviceflow.api.resume_ticket_collection", resume)
+    response = client.post("/agent/tickets/resume-session/resume")
+    assert response.status_code == 200
+    assert response.json() == {
+        "answer": "已登记人工核验，等待处理", "thread_id": "resume-session",
+    }
+    resume.assert_called_once_with(graph=app.state.ticket_graph, thread_id="resume-session")
+
+
+@pytest.mark.parametrize("error_name,status_code,message", [
+    ("TicketSessionNotFoundError", 404, "没有可恢复的售后申请"),
+    ("TicketResumeNotRequiredError", 409, "售后申请没有待恢复的步骤"),
+])
+def test_resume_api_maps_expected_state_errors(monkeypatch, error_name, status_code, message):
+    from serviceflow.agent import ticket_collection
+
+    resume = Mock(side_effect=getattr(ticket_collection, error_name)(message))
+    monkeypatch.setattr("serviceflow.api.resume_ticket_collection", resume)
+    response = client.post("/agent/tickets/resume-session/resume")
+    assert response.status_code == status_code
+    assert response.json() == {"detail": message}
+
+
+@pytest.mark.parametrize("answer", [None, "", "   "])
+def test_resume_api_rejects_empty_answer(monkeypatch, answer):
+    monkeypatch.setattr("serviceflow.api.resume_ticket_collection", Mock(return_value={"answer": answer}))
+    response = client.post("/agent/tickets/resume-session/resume")
+    assert response.status_code == 500
+    assert response.json() == {"detail": "售后流程恢复后未生成有效回答"}
+
+
+def test_demo_stream_returns_plain_text(monkeypatch):
+    stream = Mock(return_value=iter(["您好", "，欢迎咨询"]))
+    monkeypatch.setattr("serviceflow.api.stream_customer_events", stream)
+    response = client.post("/agent/demo/stream", json={"message": "你好"})
+    assert response.status_code == 200
+    assert response.text == "您好，欢迎咨询"
+    assert response.headers["content-type"].startswith("text/event-stream")
+    assert response.headers["cache-control"] == "no-cache"
+    stream.assert_called_once_with("你好", trace_id=response.headers["x-trace-id"])
+    assert len(response.headers["x-trace-id"]) == 32
+
+
+def test_demo_stream_rejects_empty_message(monkeypatch):
+    stream = Mock()
+    monkeypatch.setattr("serviceflow.api.stream_customer_events", stream)
+    response = client.post("/agent/demo/stream", json={"message": ""})
+    assert response.status_code == 422
+    stream.assert_not_called()
 
 
 def test_health() -> None:
@@ -42,7 +112,7 @@ def test_health() -> None:
 
 
 def test_classify_customer_intent(
-    monkeypatch: pytest.MonkeyPatch,
+        monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     expected_result = IntentResult(
         intent=CustomerIntent.LOGISTICS_QUERY,
@@ -68,12 +138,12 @@ def test_classify_customer_intent(
         "reason": "用户询问订单送达时间",
     }
     classify_mock.assert_called_once_with(
-        "订单20260721002什么时候能送到？"
+        "订单20260721002什么时候能送到？", classifier=app.state.classifier,
     )
 
 
 def test_classify_customer_intent_returns_502(
-    monkeypatch: pytest.MonkeyPatch,
+        monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
         "serviceflow.api.classify_intent",
@@ -101,7 +171,7 @@ def test_classify_customer_intent_rejects_empty_message() -> None:
 
 
 def test_chat_with_agent(
-    monkeypatch: pytest.MonkeyPatch,
+        monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     workflow_mock = Mock(
         return_value=("订单20260721001当前状态为待处理。", "generated-chat-id")
@@ -170,7 +240,7 @@ def test_chat_with_agent_resumes_server_generated_conversation(monkeypatch: pyte
 
 @pytest.mark.parametrize("thread_id", ["", "x" * 101, 123])
 def test_chat_with_agent_rejects_invalid_thread_id(
-    monkeypatch: pytest.MonkeyPatch, thread_id: object,
+        monkeypatch: pytest.MonkeyPatch, thread_id: object,
 ) -> None:
     workflow_mock = Mock()
     monkeypatch.setattr("serviceflow.api.run_customer_workflow", workflow_mock)
@@ -186,7 +256,7 @@ def test_chat_with_agent_rejects_invalid_thread_id(
 
 
 def test_chat_with_agent_returns_502(
-    monkeypatch: pytest.MonkeyPatch,
+        monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
         "serviceflow.api.run_customer_workflow",
@@ -339,8 +409,8 @@ def clean_test_ticket() -> Iterator[None]:
 
 
 def test_create_ticket_and_query_it(
-    monkeypatch: pytest.MonkeyPatch,
-    clean_test_ticket: None,
+        monkeypatch: pytest.MonkeyPatch,
+        clean_test_ticket: None,
 ) -> None:
     fixed_uuid = UUID(
         "00000000-0000-4000-8000-000000000001"
@@ -384,8 +454,8 @@ def test_get_unknown_ticket_returns_404() -> None:
 
 
 def test_create_ticket_for_unknown_order_returns_404(
-    monkeypatch: pytest.MonkeyPatch,
-    clean_test_ticket: None,
+        monkeypatch: pytest.MonkeyPatch,
+        clean_test_ticket: None,
 ) -> None:
     fixed_uuid = UUID(
         "00000000-0000-4000-8000-000000000001"
@@ -436,7 +506,7 @@ def test_create_ticket_with_invalid_body_returns_422() -> None:
 
 
 def test_create_ticket_eligibility_rejection_returns_409(
-    monkeypatch: pytest.MonkeyPatch,
+        monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     reason = "订单未支付，暂不能创建售后工单。"
     create_mock = Mock(side_effect=TicketEligibilityRejectedError(reason))
@@ -450,8 +520,8 @@ def test_create_ticket_eligibility_rejection_returns_409(
 
 
 def test_create_ticket_id_conflict_returns_409(
-    monkeypatch: pytest.MonkeyPatch,
-    clean_test_ticket: None,
+        monkeypatch: pytest.MonkeyPatch,
+        clean_test_ticket: None,
 ) -> None:
     with Session(engine) as session:
         with session.begin():

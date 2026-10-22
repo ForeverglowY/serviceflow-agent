@@ -1,0 +1,38 @@
+# 空库验收专用，使用 -p serviceflow-fresh，不与日常库共享数据卷。
+services:
+  postgres:
+    image: pgvector/pgvector:0.8.6-pg17
+    environment:
+      POSTGRES_DB: agent_study
+      POSTGRES_USER: agent
+      POSTGRES_PASSWORD: agent_password
+    volumes:
+      - fresh-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U agent -d agent_study"]
+      interval: 3s
+      timeout: 5s
+      retries: 20
+  api:
+    image: serviceflow-agent:local
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://agent:agent_password@postgres:5432/agent_study
+      CHECKPOINT_DATABASE_URL: postgresql://agent:agent_password@postgres:5432/agent_study
+      DATABASE_ECHO: "false"
+    ports:
+      - "127.0.0.1:8002:8000"
+    volumes:
+      - fresh-model-cache:/models
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3).close()"]
+      interval: 10s
+      timeout: 5s
+      start_period: 300s
+      retries: 5
+volumes:
+  fresh-postgres-data:
+  fresh-model-cache:

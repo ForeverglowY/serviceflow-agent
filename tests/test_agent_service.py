@@ -8,8 +8,8 @@ from openai.types.chat import ChatCompletionMessageFunctionToolCall
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.exc import TimeoutError as SQLAlchemyTimeoutError
 
-from serviceflow.agent import service as agent_service
 from serviceflow.agent import runtime as agent_runtime
+from serviceflow.agent import service as agent_service
 from serviceflow.agent.runtime import AgentServiceError
 from serviceflow.agent.service import run_customer_agent
 from serviceflow.llm.models import GetOrderResult
@@ -29,10 +29,10 @@ def make_direct_message(content: str | None) -> SimpleNamespace:
 
 
 def make_tool_message(
-    *,
-    name: str = "get_order",
-    arguments: str = '{"order_id":"20260721001"}',
-    call_id: str = "call-test-001",
+        *,
+        name: str = "get_order",
+        arguments: str = '{"order_id":"20260721001"}',
+        call_id: str = "call-test-001",
 ) -> Mock:
     tool_call = ChatCompletionMessageFunctionToolCall(
         id=call_id,
@@ -92,7 +92,7 @@ def make_multiple_tool_message() -> Mock:
 
 
 def test_agent_returns_direct_answer_without_calling_tool(
-    monkeypatch: pytest.MonkeyPatch,
+        monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     call_mock = Mock(
         return_value=make_response(
@@ -115,7 +115,7 @@ def test_agent_returns_direct_answer_without_calling_tool(
 
 
 def test_agent_executes_get_order_and_returns_final_answer(
-    monkeypatch: pytest.MonkeyPatch,
+        monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     first_message = make_tool_message()
     final_message = make_direct_message(
@@ -128,14 +128,14 @@ def test_agent_executes_get_order_and_returns_final_answer(
         ]
     )
     tool_result = GetOrderResult(
-            order_id="20260721001",
-            product_name="蓝牙耳机",
-            unit_price=399.0,
-            quantity=2,
-            total_price=798.0,
-            payment_status="已支付",
-            order_status="待处理",
-            tracking_number=None,
+        order_id="20260721001",
+        product_name="蓝牙耳机",
+        unit_price=399.0,
+        quantity=2,
+        total_price=798.0,
+        payment_status="已支付",
+        order_status="待处理",
+        tracking_number=None,
     )
     execute_tool_mock = Mock(
         return_value=tool_result.model_dump_json()
@@ -165,7 +165,7 @@ def test_agent_executes_get_order_and_returns_final_answer(
 
 
 def test_agent_returns_not_found_result_to_model(
-    monkeypatch: pytest.MonkeyPatch,
+        monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     call_mock = Mock(
         side_effect=[
@@ -190,7 +190,7 @@ def test_agent_returns_not_found_result_to_model(
 
 
 def test_agent_executes_multiple_tools_in_one_round(
-    monkeypatch: pytest.MonkeyPatch,
+        monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     call_mock = Mock(
         side_effect=[
@@ -227,7 +227,7 @@ def test_agent_executes_multiple_tools_in_one_round(
 
 
 def test_agent_stops_after_maximum_tool_rounds(
-    monkeypatch: pytest.MonkeyPatch,
+        monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     call_mock = Mock(
         side_effect=[
@@ -246,8 +246,8 @@ def test_agent_stops_after_maximum_tool_rounds(
     )
 
     with pytest.raises(
-        AgentServiceError,
-        match="超过最大工具调用次数",
+            AgentServiceError,
+            match="超过最大工具调用次数",
     ):
         run_customer_agent("重复调用工具")
 
@@ -256,7 +256,7 @@ def test_agent_stops_after_maximum_tool_rounds(
 
 
 def test_call_deepseek_converts_timeout_error(
-    monkeypatch: pytest.MonkeyPatch,
+        monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     timeout_error = APITimeoutError(
         request=Request("POST", "https://api.deepseek.com/chat/completions")
@@ -268,8 +268,8 @@ def test_call_deepseek_converts_timeout_error(
     )
 
     with pytest.raises(
-        AgentServiceError,
-        match="DeepSeek请求超时",
+            AgentServiceError,
+            match="DeepSeek请求超时",
     ) as exc_info:
         agent_runtime.call_deepseek([])
 
@@ -277,7 +277,7 @@ def test_call_deepseek_converts_timeout_error(
 
 
 def test_agent_converts_database_pool_timeout(
-    monkeypatch: pytest.MonkeyPatch,
+        monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     timeout_error = SQLAlchemyTimeoutError("模拟连接池超时")
     monkeypatch.setattr(
@@ -292,8 +292,8 @@ def test_agent_converts_database_pool_timeout(
     )
 
     with pytest.raises(
-        AgentServiceError,
-        match="工具执行超时或数据库不可用",
+            AgentServiceError,
+            match="工具执行超时或数据库不可用",
     ) as exc_info:
         run_customer_agent("查询订单")
 
@@ -301,7 +301,7 @@ def test_agent_converts_database_pool_timeout(
 
 
 def test_agent_converts_database_error(
-    monkeypatch: pytest.MonkeyPatch,
+        monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     database_error = SQLAlchemyError("模拟数据库错误")
     monkeypatch.setattr(
@@ -316,8 +316,8 @@ def test_agent_converts_database_error(
     )
 
     with pytest.raises(
-        AgentServiceError,
-        match="工具执行失败",
+            AgentServiceError,
+            match="工具执行失败",
     ) as exc_info:
         run_customer_agent("查询订单")
 
@@ -325,7 +325,7 @@ def test_agent_converts_database_error(
 
 
 def test_agent_rejects_unknown_tool(
-    monkeypatch: pytest.MonkeyPatch,
+        monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
         agent_service,
@@ -334,14 +334,14 @@ def test_agent_rejects_unknown_tool(
     )
 
     with pytest.raises(
-        AgentServiceError,
-        match="未注册的工具：delete_order",
+            AgentServiceError,
+            match="未注册的工具：delete_order",
     ):
         run_customer_agent("删除订单")
 
 
 def test_agent_rejects_invalid_tool_arguments(
-    monkeypatch: pytest.MonkeyPatch,
+        monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
         agent_service,
@@ -354,8 +354,8 @@ def test_agent_rejects_invalid_tool_arguments(
     )
 
     with pytest.raises(
-        AgentServiceError,
-        match="工具调用参数格式错误",
+            AgentServiceError,
+            match="工具调用参数格式错误",
     ) as exc_info:
         run_customer_agent("查询订单")
 
@@ -367,18 +367,18 @@ def test_agent_rejects_invalid_tool_arguments(
     [
         ([make_response(make_direct_message(None))], "DeepSeek没有返回内容"),
         (
-            [
-                make_response(make_tool_message()),
-                make_response(make_direct_message(None)),
-            ],
-            "DeepSeek没有返回内容",
+                [
+                    make_response(make_tool_message()),
+                    make_response(make_direct_message(None)),
+                ],
+                "DeepSeek没有返回内容",
         ),
     ],
 )
 def test_agent_rejects_empty_model_content(
-    monkeypatch: pytest.MonkeyPatch,
-    responses: list[SimpleNamespace],
-    error_message: str,
+        monkeypatch: pytest.MonkeyPatch,
+        responses: list[SimpleNamespace],
+        error_message: str,
 ) -> None:
     monkeypatch.setattr(
         agent_service,

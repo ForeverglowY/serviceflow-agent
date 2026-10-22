@@ -11,10 +11,34 @@ services:
     volumes:
       - agent-study-postgres-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U agent -d agent_study"]
+      test: [ "CMD-SHELL", "pg_isready -U agent -d agent_study" ]
       interval: 5s
       timeout: 5s
       retries: 10
 
+  api:
+    profiles: ["app"]
+    build: .
+    image: serviceflow-agent:local
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://agent:agent_password@postgres:5432/agent_study
+      CHECKPOINT_DATABASE_URL: postgresql://agent:agent_password@postgres:5432/agent_study
+      DATABASE_ECHO: "false"
+    ports:
+      - "127.0.0.1:8001:8000"
+    volumes:
+      - serviceflow-model-cache:/models
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3).close()"]
+      interval: 15s
+      timeout: 5s
+      start_period: 300s
+      retries: 5
+
 volumes:
   agent-study-postgres-data:
+  serviceflow-model-cache:

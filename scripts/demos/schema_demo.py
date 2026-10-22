@@ -2,6 +2,7 @@ import json
 
 from serviceflow.models import Ticket
 
+
 def main() -> None:
     schema = Ticket.model_json_schema()
     print(json.dumps(schema, ensure_ascii=False, indent=2))
@@ -34,5 +35,7 @@ def main() -> None:
     # ticket.model_dump()
     print(ticket.model_dump())
     # 把对象重新转成字典并打印。
+
+
 if __name__ == '__main__':
     main()

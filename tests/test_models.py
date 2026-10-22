@@ -4,21 +4,27 @@ import pytest
 from pydantic import ValidationError
 from pydantic_core import ErrorDetails
 
-from serviceflow.models import Logistics, LogisticsStatus, Order, OrderStatus, Product, Ticket, TicketPriority, TicketStatus, User
+from serviceflow.models import Logistics, LogisticsStatus, Order, OrderStatus, Product, Ticket, TicketPriority, \
+    TicketStatus, User
 
-VALID_ORDER_DATA = {"order_id": "TEST-001", "product_name": "测试键盘", "product_id": "PRODUCT-TEST-001", "price": 599.0, "quantity": 2, "is_paid": True,
+VALID_ORDER_DATA = {"order_id": "TEST-001", "product_name": "测试键盘", "product_id": "PRODUCT-TEST-001",
+                    "price": 599.0, "quantity": 2, "is_paid": True,
                     "status": "paid", "tracking_number": "SF100000001", "customer_note": "测试订单", }
 
-ORDER_WITHOUT_OPTIONAL_DATA = {"order_id": "TEST-002", "product_name": "测试鼠标", "product_id": "PRODUCT-TEST-002", "price": 199.0, "quantity": 1,
+ORDER_WITHOUT_OPTIONAL_DATA = {"order_id": "TEST-002", "product_name": "测试鼠标", "product_id": "PRODUCT-TEST-002",
+                               "price": 199.0, "quantity": 1,
                                "is_paid": False, }
 
-INVALID_PRICE_DATA = {"order_id": "TEST-003", "product_name": "错误价格商品", "product_id": "PRODUCT-TEST-003", "price": 0, "quantity": 1,
+INVALID_PRICE_DATA = {"order_id": "TEST-003", "product_name": "错误价格商品", "product_id": "PRODUCT-TEST-003",
+                      "price": 0, "quantity": 1,
                       "is_paid": True, "status": "paid", }
 
-INVALID_QUANTITY_DATA = {"order_id": "TEST-004", "product_name": "错误数量商品", "product_id": "PRODUCT-TEST-004", "price": 99.0, "quantity": 0,
+INVALID_QUANTITY_DATA = {"order_id": "TEST-004", "product_name": "错误数量商品", "product_id": "PRODUCT-TEST-004",
+                         "price": 99.0, "quantity": 0,
                          "is_paid": True, "status": "paid", }
 
-INVALID_STATUS_DATA = {"order_id": "TEST-005", "product_name": "错误状态商品", "product_id": "PRODUCT-TEST-005", "price": 299.0, "quantity": 1,
+INVALID_STATUS_DATA = {"order_id": "TEST-005", "product_name": "错误状态商品", "product_id": "PRODUCT-TEST-005",
+                       "price": 299.0, "quantity": 1,
                        "is_paid": True, "status": "unknown", }
 
 
@@ -91,7 +97,8 @@ USER_WITH_DEFAULTS_DATA = {"user_id": "USER-002", "name": "李四", }
 
 INVALID_USER_DATA = {"user_id": "", "name": "错误用户", "phone": "123", }
 
-VALID_PRODUCT_DATA = {"product_id": "PRODUCT-001", "name": "蓝牙耳机", "category": "in_ear_earphone", "price": 399.0, "stock": 100,
+VALID_PRODUCT_DATA = {"product_id": "PRODUCT-001", "name": "蓝牙耳机", "category": "in_ear_earphone", "price": 399.0,
+                      "stock": 100,
                       "is_returnable": True, }
 
 PRODUCT_WITH_DEFAULTS_DATA = {"product_id": "PRODUCT-002", "name": "机械键盘", "price": 599.0, "stock": 20, }
@@ -219,17 +226,18 @@ def test_logistics_status_must_be_known() -> None:
 
 
 VALID_TICKET_DATA = {"ticket_id": "TICKET-001", "order_id": "TEST-001", "user_id": "USER-001",
-    "issue_type": "product_fault", "description": "蓝牙耳机左耳没有声音", "priority": "high", "status": "processing",
-    "assigned_to": "客服小王", }
+                     "issue_type": "product_fault", "description": "蓝牙耳机左耳没有声音", "priority": "high",
+                     "status": "processing",
+                     "assigned_to": "客服小王", }
 
 TICKET_WITH_DEFAULTS_DATA = {"ticket_id": "TICKET-002", "order_id": "TEST-002", "user_id": "USER-002",
-    "issue_type": "logistics_delay", "description": "物流三天没有更新", }
+                             "issue_type": "logistics_delay", "description": "物流三天没有更新", }
 
 INVALID_TICKET_PRIORITY_DATA = {"ticket_id": "TICKET-003", "order_id": "TEST-003", "user_id": "USER-003",
-    "issue_type": "refund", "description": "申请退款", "priority": "critical", }
+                                "issue_type": "refund", "description": "申请退款", "priority": "critical", }
 
 INVALID_TICKET_DESCRIPTION_DATA = {"ticket_id": "TICKET-004", "order_id": "TEST-004", "user_id": "USER-004",
-    "issue_type": "other", "description": "", }
+                                   "issue_type": "other", "description": "", }
 
 
 def test_valid_ticket() -> None:

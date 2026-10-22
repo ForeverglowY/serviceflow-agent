@@ -3,14 +3,11 @@ from sqlalchemy import create_engine, text
 from serviceflow.db.models import Base
 from serviceflow.settings import settings
 
-DATABASE_URL = (
-    "postgresql+psycopg://"
-    "agent:agent_password@localhost:5432/agent_study"
-)
+DATABASE_URL = settings.database_url
 
 engine = create_engine(
     DATABASE_URL,
-    echo=True,
+    echo=settings.database_echo,
     pool_timeout=settings.database_pool_timeout_seconds,
     connect_args={
         "connect_timeout": (

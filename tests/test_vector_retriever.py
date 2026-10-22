@@ -8,7 +8,6 @@ from sentence_transformers import SentenceTransformer
 from serviceflow.rag.loader import load_policy, split_policy
 from serviceflow.rag.vector_retriever import retrieve_by_vector
 
-
 POLICY_PATH = Path(
     "knowledge/policies/03-earphone-hygiene-return.md"
 )
@@ -21,10 +20,10 @@ class FakeEmbeddingModel:
         self.normalize_embeddings: bool | None = None
 
     def encode(
-        self,
-        text: str,
-        *,
-        normalize_embeddings: bool,
+            self,
+            text: str,
+            *,
+            normalize_embeddings: bool,
     ) -> np.ndarray:
         self.encoded_text = text
         self.normalize_embeddings = normalize_embeddings

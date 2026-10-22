@@ -20,9 +20,9 @@ from serviceflow.ticket.rules import (
     ],
 )
 def test_assess_return_request_connects_classification_facts_and_rules(
-    monkeypatch: pytest.MonkeyPatch,
-    reason: ReturnReason,
-    decision: TicketEligibilityDecision,
+        monkeypatch: pytest.MonkeyPatch,
+        reason: ReturnReason,
+        decision: TicketEligibilityDecision,
 ) -> None:
     requested_at = date(2026, 10, 3)
     facts = ReturnEligibilityInput(
@@ -39,6 +39,8 @@ def test_assess_return_request_connects_classification_facts_and_rules(
     monkeypatch.setattr(ticket_assessment, "classify_return_reason", classify)
     monkeypatch.setattr(ticket_assessment, "load_return_eligibility_input", load_facts)
     monkeypatch.setattr(ticket_assessment, "check_return_eligibility", check_rules)
+    monkeypatch.setattr(ticket_assessment, "assess_order_ticket_eligibility", Mock(return_value=
+        TicketEligibilityResult(decision=TicketEligibilityDecision.ALLOW, reason="订单允许申请")))
 
     actual = ticket_assessment.assess_return_request(
         order_id="20260721001",
@@ -60,3 +62,20 @@ def test_assess_return_request_connects_classification_facts_and_rules(
         requested_at=requested_at,
     )
     check_rules.assert_called_once_with(facts)
+
+
+@pytest.mark.parametrize("reason", ["订单未支付", "订单已取消", "订单不存在"])
+def test_order_rejection_short_circuits_llm_and_return_rules(monkeypatch, reason):
+    rejected = TicketEligibilityResult(decision=TicketEligibilityDecision.REJECT, reason=reason)
+    monkeypatch.setattr(ticket_assessment, "assess_order_ticket_eligibility", Mock(return_value=rejected))
+    classify = Mock()
+    facts = Mock()
+    rules = Mock()
+    monkeypatch.setattr(ticket_assessment, "classify_return_reason", classify)
+    monkeypatch.setattr(ticket_assessment, "load_return_eligibility_input", facts)
+    monkeypatch.setattr(ticket_assessment, "check_return_eligibility", rules)
+    result = ticket_assessment.assess_return_request("ORDER", "坏了", "换货", date.today())
+    assert result is rejected
+    classify.assert_not_called()
+    facts.assert_not_called()
+    rules.assert_not_called()

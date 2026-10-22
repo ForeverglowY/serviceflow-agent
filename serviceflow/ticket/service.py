@@ -1,6 +1,7 @@
 from datetime import date
 from uuid import uuid4
 
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -9,7 +10,7 @@ from serviceflow.db.models import LogisticsTable, OrderTable, ProductTable, Tick
 from serviceflow.models import Logistics, LogisticsStatus, Order, Product, Ticket, TicketConfirmationCreate, \
     TicketCreate
 from serviceflow.ticket.rules import ReturnEligibilityInput, ReturnReason, TicketEligibilityDecision, \
-    check_order_ticket_eligibility
+    check_order_ticket_eligibility, TicketEligibilityResult
 
 
 class TicketServiceError(Exception):
@@ -36,10 +37,29 @@ class TicketLogisticsNotFoundError(TicketServiceError):
     pass
 
 
-def create_ticket(ticket_create: TicketCreate, confirmation_create: TicketConfirmationCreate | None = None) -> Ticket:
+def assess_order_ticket_eligibility(order_id: str) -> TicketEligibilityResult:
+    """确认前读取订单事实，复用提交阶段的同一套规则。"""
+    with Session(engine) as session:
+        record = session.get(OrderTable, order_id)
+        if record is None:
+            return TicketEligibilityResult(
+                decision=TicketEligibilityDecision.REJECT, reason="订单不存在，无法申请售后。",
+            )
+        order = Order.model_validate(record, from_attributes=True)
+        return check_order_ticket_eligibility(order)
+
+
+def create_ticket(ticket_create: TicketCreate, confirmation_create: TicketConfirmationCreate | None = None,
+                  submission_id: str | None = None) -> Ticket:
     try:
         with Session(engine) as session:
             with session.begin():
+                # 查重，看 submission_id 对应的订单是否已经存在
+                if submission_id is not None:
+                    existing_ticket = session.scalar(
+                        select(TicketTable).where(TicketTable.submission_id == submission_id))
+                    if existing_ticket is not None:
+                        return Ticket.model_validate(existing_ticket, from_attributes=True, )
                 # 检查 order_id 对应的订单是否存在
                 order_record = session.get(OrderTable, ticket_create.order_id)
                 if order_record is None:
@@ -52,7 +72,7 @@ def create_ticket(ticket_create: TicketCreate, confirmation_create: TicketConfir
 
                 ticket_id = f"TICKET-{uuid4().hex}"
                 ticket = Ticket(ticket_id=ticket_id, **ticket_create.model_dump(), )
-                ticket_record = TicketTable(**ticket.model_dump(mode="json"), )
+                ticket_record = TicketTable(submission_id=submission_id, **ticket.model_dump(mode="json"), )
                 session.add(ticket_record)
                 session.flush()
 
@@ -65,6 +85,12 @@ def create_ticket(ticket_create: TicketCreate, confirmation_create: TicketConfir
                 return Ticket.model_validate(ticket_record, from_attributes=True, )
 
     except IntegrityError as error:
+        if submission_id is not None:
+            with Session(engine) as session:
+                existing_ticket = session.scalar(
+                    select(TicketTable).where(TicketTable.submission_id == submission_id))
+                if existing_ticket is not None:
+                    return Ticket.model_validate(existing_ticket, from_attributes=True, )
         raise TicketCreateConflictError("工单创建冲突") from error
 
 

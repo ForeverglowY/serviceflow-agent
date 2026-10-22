@@ -1,6 +1,6 @@
 from pydantic import ValidationError
 
-from serviceflow.models import Order, OrderStatus
+from serviceflow.models import Order
 
 order_right = {
     "order_id": "1",
@@ -131,6 +131,7 @@ def validate_order(order_data: dict) -> None:
         print(type(order.status))
         print(order.status.value)
         print()
+
 
 def main() -> None:
     validate_order(order_without_tracking)

@@ -28,7 +28,7 @@ def make_chunk(chunk_id: str, policy_id: str) -> PolicyChunk:
 
 
 def test_evaluate_strategy_returns_hit_percentage(
-    monkeypatch: pytest.MonkeyPatch,
+        monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     policy_a_chunk = make_chunk("POL-A-001", "POL-A")
     policy_b_chunk = make_chunk("POL-B-001", "POL-B")
@@ -46,11 +46,11 @@ def test_evaluate_strategy_returns_hit_percentage(
     ]
 
     def fake_retrieve_by_vector(
-        model: SentenceTransformer,
-        chunks: list[PolicyChunk],
-        chunk_vectors: np.ndarray,
-        query: str,
-        top_k: int = 3,
+            model: SentenceTransformer,
+            chunks: list[PolicyChunk],
+            chunk_vectors: np.ndarray,
+            query: str,
+            top_k: int = 3,
     ) -> list[tuple[PolicyChunk, float]]:
         del model, chunks, chunk_vectors, top_k
         if query == "命中问题":

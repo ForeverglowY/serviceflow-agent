@@ -3,17 +3,21 @@ from functools import partial
 from operator import add
 from uuid import uuid4
 
+from langchain_core.language_models import LanguageModelInput
+from langchain_core.runnables import Runnable, RunnableConfig
 from langgraph.constants import END, START
 from langgraph.graph.state import CompiledStateGraph, StateGraph
 from sentence_transformers import SentenceTransformer
 from typing_extensions import Annotated, TypedDict
 
-from serviceflow.agent.graph import run_customer_agent_graph
+from serviceflow.agent.langchain_graph import run_langchain_agent_graph
 from serviceflow.agent.routing import select_customer_route
 from serviceflow.agent.runtime import AgentServiceError
-from serviceflow.agent.ticket_collection import is_ticket_collection_active, run_ticket_collection_turn
+from serviceflow.agent.ticket_collection import TicketRecoveryRequiredError, is_ticket_collection_active, \
+    run_ticket_collection_turn
+from serviceflow.llm.langchain_service import classify_intent
 from serviceflow.llm.models import IntentResult
-from serviceflow.llm.service import LLMServiceError, classify_intent
+from serviceflow.llm.service import LLMServiceError
 from serviceflow.rag.service import RAGServiceError, answer_policy_question
 
 logger = logging.getLogger(__name__)
@@ -37,12 +41,14 @@ class CustomerWorkflowStateUpdate(TypedDict, total=False):
 # 理解客户说了什么，生成意图
 def classify_customer_intent_node(
         state: CustomerWorkflowState,
+        *,
+        classifier: Runnable[LanguageModelInput, IntentResult],
 ) -> CustomerWorkflowStateUpdate:
     # 读取state["user_message"]。
     user_message = state["user_message"]
     # 调用已有的classify_intent()，它会返回经过Pydantic校验的IntentResult。
     try:
-        intent_result = classify_intent(user_message)
+        intent_result = classify_intent(user_text=user_message, classifier=classifier)
     except LLMServiceError as exception:
         raise AgentServiceError(
             "客户意图识别失败"
@@ -105,8 +111,11 @@ def handle_tools_node(
         *,
         agent_graph: CompiledStateGraph,
 ) -> CustomerWorkflowStateUpdate:
-    answer, thread_id = run_customer_agent_graph(user_text=state["user_message"], graph=agent_graph,
-                                                 thread_id=state["thread_id"])
+    answer, thread_id = run_langchain_agent_graph(
+        user_text=state["user_message"],
+        graph=agent_graph,
+        thread_id=state["thread_id"]
+    )
 
     return {
         "answer": answer,
@@ -148,6 +157,17 @@ def route_customer_entry(
     if thread_id is None or not thread_id.strip():
         raise AgentServiceError("客服工作流缺少会话编号")
 
+    config: RunnableConfig = {
+        "configurable": {
+            "thread_id": thread_id,
+        }
+    }
+    snapshot = ticket_graph.get_state(config=config)
+    if snapshot.next:
+        raise TicketRecoveryRequiredError(
+            "售后申请存在未完成步骤，请通过重试入口恢复"
+        )
+
     is_active = is_ticket_collection_active(graph=ticket_graph, thread_id=thread_id)
     if is_active:
         return "continue_ticket"
@@ -160,6 +180,8 @@ def build_customer_workflow(
         agent_graph: CompiledStateGraph,
         embedding_model: SentenceTransformer,
         ticket_graph: CompiledStateGraph,
+        *,
+        classifier: Runnable[LanguageModelInput, IntentResult],
 ) -> CompiledStateGraph:
     # agent_graph 是工具 agent 图
     # embedding_model 是向量模型
@@ -167,7 +189,7 @@ def build_customer_workflow(
 
     builder.add_node(
         "classify_intent",
-        classify_customer_intent_node
+        partial(classify_customer_intent_node, classifier=classifier)
     )
     builder.add_node(
         "handle_fallback",

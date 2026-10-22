@@ -1,13 +1,16 @@
 from datetime import date
 
 from serviceflow.llm.service import classify_return_reason
-from serviceflow.ticket.rules import TicketEligibilityResult, check_return_eligibility
-from serviceflow.ticket.service import load_return_eligibility_input
+from serviceflow.ticket.rules import TicketEligibilityDecision, TicketEligibilityResult, check_return_eligibility
+from serviceflow.ticket.service import assess_order_ticket_eligibility, load_return_eligibility_input
 
 
 # “退换货评估”的编排函数
 def assess_return_request(order_id: str, issue_description: str, requested_action: str,
                           requested_at: date) -> TicketEligibilityResult:
+    order_eligibility = assess_order_ticket_eligibility(order_id)
+    if order_eligibility.decision != TicketEligibilityDecision.ALLOW:
+        return order_eligibility
     # 提取退换货原因
     return_reason_result = classify_return_reason(issue_description=issue_description,
                                                   requested_action=requested_action, )

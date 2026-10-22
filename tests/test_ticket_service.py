@@ -3,12 +3,12 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, Mock, call
 
 import pytest
-
-from serviceflow.models import OrderStatus, TicketCreate, TicketConfirmationCreate
-from serviceflow.db.models import LogisticsTable, OrderTable, ProductTable, TicketTable, TicketConfirmationTable
 from sqlalchemy.exc import IntegrityError
+
+from serviceflow.db.models import LogisticsTable, OrderTable, ProductTable, TicketConfirmationTable, TicketTable
+from serviceflow.models import OrderStatus, TicketConfirmationCreate, TicketCreate
 from serviceflow.ticket import service as ticket_service
-from serviceflow.ticket.rules import ReturnReason, check_return_eligibility, TicketEligibilityDecision
+from serviceflow.ticket.rules import ReturnReason, TicketEligibilityDecision, check_return_eligibility
 
 
 def make_ticket_create() -> TicketCreate:
@@ -18,6 +18,141 @@ def make_ticket_create() -> TicketCreate:
         issue_type="product_fault",
         description="左耳没有声音；用户希望处理方式：换货",
     )
+
+
+@pytest.mark.parametrize("paid,status,decision", [
+    (False, "pending", "reject"),
+    (True, "canceled", "reject"),
+    (True, "paid", "allow"),
+])
+def test_preconfirmation_order_check_uses_order_rules(monkeypatch, paid, status, decision):
+    session = MagicMock()
+    session.__enter__.return_value = session
+    session.get.return_value = SimpleNamespace(
+        order_id="ORDER", product_id="PRODUCT", product_name="耳机", price=100,
+        quantity=1, is_paid=paid, status=status, tracking_number=None, customer_note=None,
+    )
+    monkeypatch.setattr(ticket_service, "Session", Mock(return_value=session))
+    result = ticket_service.assess_order_ticket_eligibility("ORDER")
+    assert result.decision.value == decision
+    session.add.assert_not_called()
+
+
+def test_preconfirmation_missing_order_returns_business_rejection(monkeypatch):
+    session = MagicMock()
+    session.__enter__.return_value = session
+    session.get.return_value = None
+    monkeypatch.setattr(ticket_service, "Session", Mock(return_value=session))
+    result = ticket_service.assess_order_ticket_eligibility("MISSING")
+    assert result.decision.value == "reject"
+    assert "不存在" in result.reason
+
+
+def test_same_submission_returns_original_ticket_without_duplicate_writes(monkeypatch):
+    session = Mock()
+    session.get.return_value = SimpleNamespace(
+        order_id="20260721001", product_id="PRODUCT-001", product_name="耳机",
+        price=399.0, quantity=1, is_paid=True, status="paid",
+        tracking_number=None, customer_note=None,
+    )
+    session.begin.return_value = MagicMock()
+    session_context = MagicMock()
+    session_context.__enter__.return_value = session
+    monkeypatch.setattr(ticket_service, "Session", Mock(return_value=session_context))
+    stored = {}
+    session.scalar.side_effect = lambda statement: stored.get("ticket")
+
+    def remember_record(record):
+        if isinstance(record, TicketTable):
+            stored["ticket"] = record
+
+    session.add.side_effect = remember_record
+    confirmation = TicketConfirmationCreate(
+        confirmed_by="USER-DEMO",
+        confirmed_at=datetime(2026, 10, 4, tzinfo=timezone.utc),
+        confirmation_message="确认",
+        application_snapshot={"order_id": "20260721001"},
+    )
+    submission_id = "a" * 32
+    first = ticket_service.create_ticket(
+        make_ticket_create(), confirmation_create=confirmation, submission_id=submission_id,
+    )
+    second = ticket_service.create_ticket(
+        make_ticket_create(), confirmation_create=confirmation, submission_id=submission_id,
+    )
+
+    assert first == second
+    assert stored["ticket"].submission_id == submission_id
+    assert session.add.call_count == 2  # 一张工单、一条确认记录
+    assert session.flush.call_count == 2
+    session.get.assert_called_once()
+    assert session.scalar.call_count == 2
+    for query_call in session.scalar.call_args_list:
+        statement = query_call.args[0]
+        assert "tickets.submission_id =" in str(statement)
+        assert submission_id in statement.compile().params.values()
+
+
+@pytest.mark.parametrize("found_after_conflict", [True, False])
+def test_submission_conflict_queries_new_session(monkeypatch, found_after_conflict):
+    from serviceflow.models import Ticket
+
+    submission_id = "b" * 32
+    expected = Ticket(ticket_id="TICKET-WINNER", **make_ticket_create().model_dump())
+    existing = TicketTable(submission_id=submission_id, **expected.model_dump(mode="json"))
+    failed_session = Mock()
+    failed_session.scalar.return_value = None
+    failed_session.get.return_value = SimpleNamespace(
+        order_id="20260721001", product_id="PRODUCT-001", product_name="耳机",
+        price=399.0, quantity=1, is_paid=True, status="paid",
+        tracking_number=None, customer_note=None,
+    )
+    failed_session.begin.return_value = MagicMock()
+    error = IntegrityError("insert ticket", {}, Exception("constraint violation"))
+    failed_session.flush.side_effect = error
+    recovery_session = Mock()
+    recovery_session.scalar.return_value = existing if found_after_conflict else None
+    contexts = []
+    for session in (failed_session, recovery_session):
+        context = MagicMock()
+        context.__enter__.return_value = session
+        contexts.append(context)
+    session_factory = Mock(side_effect=contexts)
+    monkeypatch.setattr(ticket_service, "Session", session_factory)
+
+    if found_after_conflict:
+        result = ticket_service.create_ticket(make_ticket_create(), submission_id=submission_id)
+        assert result == expected
+    else:
+        with pytest.raises(ticket_service.TicketCreateConflictError) as captured:
+            ticket_service.create_ticket(make_ticket_create(), submission_id=submission_id)
+        assert captured.value.__cause__ is error
+
+    assert session_factory.call_count == 2
+    assert contexts[0].__exit__.call_args.args[0] is IntegrityError
+    recovery_session.scalar.assert_called_once()
+    statement = recovery_session.scalar.call_args.args[0]
+    assert submission_id in statement.compile().params.values()
+    recovery_session.add.assert_not_called()
+    recovery_session.flush.assert_not_called()
+
+
+def test_submission_none_preserves_ordinary_creation(monkeypatch):
+    session = Mock()
+    session.get.return_value = SimpleNamespace(
+        order_id="20260721001", product_id="PRODUCT-001", product_name="耳机",
+        price=399.0, quantity=1, is_paid=True, status="paid",
+        tracking_number=None, customer_note=None,
+    )
+    session.begin.return_value = MagicMock()
+    session_context = MagicMock()
+    session_context.__enter__.return_value = session
+    monkeypatch.setattr(ticket_service, "Session", Mock(return_value=session_context))
+
+    ticket_service.create_ticket(make_ticket_create())
+
+    session.scalar.assert_not_called()
+    assert session.add.call_args.args[0].submission_id is None
 
 
 @pytest.mark.parametrize("decision,expected", [
@@ -99,8 +234,8 @@ def test_create_ticket_rejects_when_order_is_not_eligible(monkeypatch: pytest.Mo
     )
 
     with pytest.raises(
-        ticket_service.TicketEligibilityRejectedError,
-        match="订单未支付，暂不能创建售后工单。",
+            ticket_service.TicketEligibilityRejectedError,
+            match="订单未支付，暂不能创建售后工单。",
     ):
         ticket_service.create_ticket(make_ticket_create())
 
@@ -116,10 +251,10 @@ def test_create_ticket_rejects_when_order_is_not_eligible(monkeypatch: pytest.Mo
     ],
 )
 def test_create_ticket_enforces_order_rules_before_database_write(
-    monkeypatch: pytest.MonkeyPatch,
-    is_paid: bool,
-    status: OrderStatus,
-    expected_reason: str,
+        monkeypatch: pytest.MonkeyPatch,
+        is_paid: bool,
+        status: OrderStatus,
+        expected_reason: str,
 ) -> None:
     order_record = SimpleNamespace(
         order_id="20260721001",
@@ -148,8 +283,8 @@ def test_create_ticket_enforces_order_rules_before_database_write(
 
 @pytest.mark.parametrize("special_review", [False, True])
 def test_load_return_eligibility_input_uses_catalog_and_signed_date(
-    monkeypatch: pytest.MonkeyPatch,
-    special_review: bool,
+        monkeypatch: pytest.MonkeyPatch,
+        special_review: bool,
 ) -> None:
     order_record = SimpleNamespace(
         order_id="20260721017",
@@ -213,7 +348,7 @@ def test_load_return_eligibility_input_uses_catalog_and_signed_date(
 
 
 def test_load_return_eligibility_input_without_logistics_keeps_date_unknown(
-    monkeypatch: pytest.MonkeyPatch,
+        monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     order_record = SimpleNamespace(
         order_id="20260721001",
@@ -254,7 +389,7 @@ def test_load_return_eligibility_input_without_logistics_keeps_date_unknown(
 
 
 def test_load_return_eligibility_input_in_transit_keeps_date_unknown(
-    monkeypatch: pytest.MonkeyPatch,
+        monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     order_record = SimpleNamespace(
         order_id="20260721001",

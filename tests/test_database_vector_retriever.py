@@ -16,10 +16,10 @@ class FakeEmbeddingModel:
         self.normalize_embeddings: bool | None = None
 
     def encode(
-        self,
-        text: str,
-        *,
-        normalize_embeddings: bool,
+            self,
+            text: str,
+            *,
+            normalize_embeddings: bool,
     ) -> np.ndarray:
         self.encoded_text = text
         self.normalize_embeddings = normalize_embeddings
@@ -28,8 +28,8 @@ class FakeEmbeddingModel:
 
 class FakeResult:
     def __init__(
-        self,
-        rows: list[tuple[PolicyChunkTable, float]],
+            self,
+            rows: list[tuple[PolicyChunkTable, float]],
     ) -> None:
         self.rows = rows
 
@@ -75,7 +75,7 @@ def make_record(chunk_id: str, section: str) -> PolicyChunkTable:
 
 
 def test_retrieve_from_database_returns_all_ranked_results(
-    monkeypatch: pytest.MonkeyPatch,
+        monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     FakeSession.rows = [
         (make_record("CHUNK-001", "质量问题例外"), 0.2),
@@ -109,7 +109,7 @@ def test_retrieve_from_database_returns_all_ranked_results(
 
 
 def test_retrieve_from_database_returns_empty_list(
-    monkeypatch: pytest.MonkeyPatch,
+        monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     FakeSession.rows = []
     monkeypatch.setattr(
@@ -127,7 +127,7 @@ def test_retrieve_from_database_returns_empty_list(
 
 
 def test_retrieve_from_database_adds_metadata_filters(
-    monkeypatch: pytest.MonkeyPatch,
+        monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     FakeSession.rows = []
     FakeSession.executed_statement = None
@@ -161,7 +161,7 @@ def test_retrieve_from_database_adds_metadata_filters(
 
 
 def test_retrieve_from_database_excludes_future_policies(
-    monkeypatch: pytest.MonkeyPatch,
+        monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     FakeSession.rows = []
     FakeSession.executed_statement = None

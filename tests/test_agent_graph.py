@@ -42,10 +42,10 @@ def make_direct_message(content: str | None) -> Mock:
 
 
 def make_tool_call(
-    *,
-    name: str,
-    arguments: str,
-    call_id: str,
+        *,
+        name: str,
+        arguments: str,
+        call_id: str,
 ) -> ChatCompletionMessageFunctionToolCall:
     return ChatCompletionMessageFunctionToolCall(
         id=call_id,
@@ -58,7 +58,7 @@ def make_tool_call(
 
 
 def make_tool_message(
-    tool_calls: list[ChatCompletionMessageFunctionToolCall],
+        tool_calls: list[ChatCompletionMessageFunctionToolCall],
 ) -> Mock:
     message = Mock()
     message.content = None
@@ -99,7 +99,7 @@ def make_validation_error() -> ValidationError:
 
 
 def test_run_customer_agent_graph_returns_direct_answer(
-    monkeypatch: pytest.MonkeyPatch,
+        monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     call_mock = Mock(
         return_value=make_response(
@@ -119,7 +119,7 @@ def test_run_customer_agent_graph_returns_direct_answer(
 
 
 def test_graph_executes_one_tool_and_returns_final_answer(
-    monkeypatch: pytest.MonkeyPatch,
+        monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     tool_call = make_tool_call(
         name="get_order",
@@ -172,7 +172,7 @@ def test_graph_executes_one_tool_and_returns_final_answer(
 
 
 def test_graph_executes_multiple_tools_in_one_round(
-    monkeypatch: pytest.MonkeyPatch,
+        monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     order_call = make_tool_call(
         name="get_order",
@@ -220,7 +220,7 @@ def test_graph_executes_multiple_tools_in_one_round(
 
 
 def test_graph_stops_when_tool_round_limit_is_reached(
-    monkeypatch: pytest.MonkeyPatch,
+        monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     first_call = make_tool_call(
         name="get_order",
@@ -244,8 +244,8 @@ def test_graph_stops_when_tool_round_limit_is_reached(
     monkeypatch.setattr(agent_graph, "execute_tool", execute_tool_mock)
 
     with pytest.raises(
-        AgentServiceError,
-        match="超过最大工具调用次数",
+            AgentServiceError,
+            match="超过最大工具调用次数",
     ):
         CUSTOMER_AGENT_GRAPH.invoke(make_initial_state(), config={"configurable": {"thread_id": uuid4().hex}})
 
@@ -254,7 +254,7 @@ def test_graph_stops_when_tool_round_limit_is_reached(
 
 
 def test_graph_rejects_empty_model_content(
-    monkeypatch: pytest.MonkeyPatch,
+        monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
         agent_graph,
@@ -263,14 +263,14 @@ def test_graph_rejects_empty_model_content(
     )
 
     with pytest.raises(
-        AgentServiceError,
-        match="DeepSeek没有返回内容",
+            AgentServiceError,
+            match="DeepSeek没有返回内容",
     ):
         CUSTOMER_AGENT_GRAPH.invoke(make_initial_state(), config={"configurable": {"thread_id": uuid4().hex}})
 
 
 def test_graph_rejects_non_function_tool_call(
-    monkeypatch: pytest.MonkeyPatch,
+        monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     custom_tool_call = SimpleNamespace(type="custom")
     message = Mock()
@@ -287,16 +287,16 @@ def test_graph_rejects_non_function_tool_call(
     )
 
     with pytest.raises(
-        AgentServiceError,
-        match="不支持的工具调用类型：custom",
+            AgentServiceError,
+            match="不支持的工具调用类型：custom",
     ):
         CUSTOMER_AGENT_GRAPH.invoke(make_initial_state(), config={"configurable": {"thread_id": uuid4().hex}})
 
 
 def test_execute_tools_node_rejects_empty_pending_calls() -> None:
     with pytest.raises(
-        AgentServiceError,
-        match="没有待执行的工具调用",
+            AgentServiceError,
+            match="没有待执行的工具调用",
     ):
         execute_tools_node(make_initial_state())
 
@@ -305,35 +305,35 @@ def test_execute_tools_node_rejects_empty_pending_calls() -> None:
     ("original_exception", "expected_message"),
     [
         (
-            ToolNotFoundError("未注册的工具：unknown_tool"),
-            "未注册的工具：unknown_tool",
+                ToolNotFoundError("未注册的工具：unknown_tool"),
+                "未注册的工具：unknown_tool",
         ),
         (
-            make_validation_error(),
-            "工具调用参数格式错误",
+                make_validation_error(),
+                "工具调用参数格式错误",
         ),
         (
-            OperationalError(
-                "SELECT 1",
-                {},
-                RuntimeError("数据库不可用"),
-            ),
-            "工具执行超时或数据库不可用",
+                OperationalError(
+                    "SELECT 1",
+                    {},
+                    RuntimeError("数据库不可用"),
+                ),
+                "工具执行超时或数据库不可用",
         ),
         (
-            SQLAlchemyTimeoutError("连接池超时"),
-            "工具执行超时或数据库不可用",
+                SQLAlchemyTimeoutError("连接池超时"),
+                "工具执行超时或数据库不可用",
         ),
         (
-            SQLAlchemyError("数据库执行失败"),
-            "工具执行失败",
+                SQLAlchemyError("数据库执行失败"),
+                "工具执行失败",
         ),
     ],
 )
 def test_execute_tools_node_converts_tool_exceptions(
-    monkeypatch: pytest.MonkeyPatch,
-    original_exception: Exception,
-    expected_message: str,
+        monkeypatch: pytest.MonkeyPatch,
+        original_exception: Exception,
+        expected_message: str,
 ) -> None:
     tool_call = make_tool_call(
         name="get_order",
@@ -349,8 +349,8 @@ def test_execute_tools_node_converts_tool_exceptions(
     )
 
     with pytest.raises(
-        AgentServiceError,
-        match=expected_message,
+            AgentServiceError,
+            match=expected_message,
     ) as exception_info:
         execute_tools_node(state)
 
@@ -359,8 +359,8 @@ def test_execute_tools_node_converts_tool_exceptions(
 
 def test_route_after_model_rejects_inconsistent_state() -> None:
     with pytest.raises(
-        AgentServiceError,
-        match="模型既未返回最终回答，也未请求调用工具",
+            AgentServiceError,
+            match="模型既未返回最终回答，也未请求调用工具",
     ):
         route_after_model(make_initial_state())
 
@@ -374,7 +374,8 @@ def test_conversation_preserves_history_without_duplicate_system(monkeypatch: py
     thread_id = uuid4().hex
 
     run_customer_agent_graph("查询订单20260721001", graph=CUSTOMER_AGENT_GRAPH, thread_id=thread_id)
-    answer, returned_thread_id = run_customer_agent_graph("那它到哪里了？", graph=CUSTOMER_AGENT_GRAPH, thread_id=thread_id)
+    answer, returned_thread_id = run_customer_agent_graph("那它到哪里了？", graph=CUSTOMER_AGENT_GRAPH,
+                                                          thread_id=thread_id)
 
     assert answer == "第二轮回答"
     assert returned_thread_id == thread_id
@@ -418,8 +419,10 @@ def test_each_turn_gets_a_fresh_tool_round_budget(monkeypatch: pytest.MonkeyPatc
     monkeypatch.setattr(agent_graph, "execute_tool", tool_mock)
     thread_id = uuid4().hex
 
-    assert run_customer_agent_graph("查询订单", graph=CUSTOMER_AGENT_GRAPH, thread_id=thread_id) == ("第一轮完成", thread_id)
-    assert run_customer_agent_graph("再查一次", graph=CUSTOMER_AGENT_GRAPH, thread_id=thread_id) == ("第二轮完成", thread_id)
+    assert run_customer_agent_graph("查询订单", graph=CUSTOMER_AGENT_GRAPH, thread_id=thread_id) == ("第一轮完成",
+                                                                                                     thread_id)
+    assert run_customer_agent_graph("再查一次", graph=CUSTOMER_AGENT_GRAPH, thread_id=thread_id) == ("第二轮完成",
+                                                                                                     thread_id)
 
     state = CUSTOMER_AGENT_GRAPH.get_state({"configurable": {"thread_id": thread_id}}).values
     assert state["tool_rounds"] == 1

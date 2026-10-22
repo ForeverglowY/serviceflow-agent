@@ -38,9 +38,9 @@ def test_reciprocal_rank_score_uses_rank_and_rrf_k() -> None:
     ],
 )
 def test_reciprocal_rank_score_rejects_invalid_arguments(
-    rank: int,
-    rrf_k: int,
-    message: str,
+        rank: int,
+        rrf_k: int,
+        message: str,
 ) -> None:
     with pytest.raises(ValueError, match=message):
         reciprocal_rank_score(rank=rank, rrf_k=rrf_k)
@@ -110,9 +110,9 @@ def test_fuse_rankings_respects_top_k_and_empty_results() -> None:
     ],
 )
 def test_fuse_rankings_rejects_invalid_arguments(
-    top_k: int,
-    rrf_k: int,
-    message: str,
+        top_k: int,
+        rrf_k: int,
+        message: str,
 ) -> None:
     with pytest.raises(ValueError, match=message):
         fuse_rankings([], [], top_k=top_k, rrf_k=rrf_k)

@@ -10,7 +10,6 @@ from serviceflow.rag.loader import (
     split_policy,
 )
 
-
 POLICY_DIRECTORY = Path("knowledge/policies")
 
 
@@ -118,20 +117,20 @@ def test_all_policies_produce_twenty_document_chunks() -> None:
 
 
 def test_load_policy_rejects_missing_front_matter(
-    tmp_path: Path,
+        tmp_path: Path,
 ) -> None:
     path = tmp_path / "invalid.md"
     path.write_text("# 没有元数据的政策", encoding="utf-8")
 
     with pytest.raises(
-        ValueError,
-        match="政策文件缺少YAML元数据",
+            ValueError,
+            match="政策文件缺少YAML元数据",
     ):
         load_policy(path)
 
 
 def test_load_policy_rejects_unclosed_front_matter(
-    tmp_path: Path,
+        tmp_path: Path,
 ) -> None:
     path = tmp_path / "invalid.md"
     path.write_text(
@@ -140,14 +139,14 @@ def test_load_policy_rejects_unclosed_front_matter(
     )
 
     with pytest.raises(
-        ValueError,
-        match="YAML元数据没有正确结束",
+            ValueError,
+            match="YAML元数据没有正确结束",
     ):
         load_policy(path)
 
 
 def test_split_policy_rejects_empty_section(
-    tmp_path: Path,
+        tmp_path: Path,
 ) -> None:
     path = tmp_path / "invalid.md"
     path.write_text(
@@ -174,7 +173,7 @@ applicable_products: general
     policy = load_policy(path)
 
     with pytest.raises(
-        ValueError,
-        match="政策章节没有正文.*空章节",
+            ValueError,
+            match="政策章节没有正文.*空章节",
     ):
         split_policy(policy)

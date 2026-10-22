@@ -7,6 +7,8 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 
 class Settings(BaseSettings):
+    database_url: str = "postgresql+psycopg://agent:agent_password@localhost:5432/agent_study"
+    database_echo: bool = False
     deepseek_api_key: str
     deepseek_base_url: str = "https://api.deepseek.com"
     deepseek_model: str = "deepseek-v4-flash"

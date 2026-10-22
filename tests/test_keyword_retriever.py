@@ -4,7 +4,6 @@ from serviceflow.rag.keyword_retriever import retrieve_by_keywords
 from serviceflow.rag.loader import load_policies, split_policy
 from serviceflow.rag.models import PolicyChunk
 
-
 POLICY_DIRECTORY = Path("knowledge/policies")
 
 

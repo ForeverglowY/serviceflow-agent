@@ -13,7 +13,6 @@ from serviceflow.rag.loader import load_policy, split_policy
 from serviceflow.rag.models import PolicyChunk
 from serviceflow.rag.utils import calculate_content_hash
 
-
 POLICY_PATH = Path(
     "knowledge/policies/03-earphone-hygiene-return.md"
 )
@@ -116,8 +115,8 @@ def test_find_chunks_to_index_skips_unchanged_chunk() -> None:
     ],
 )
 def test_find_chunks_to_index_reindexes_changed_chunk(
-    stored_hash: str,
-    stored_model: str,
+        stored_hash: str,
+        stored_model: str,
 ) -> None:
     chunk = split_policy(load_policy(POLICY_PATH))[0]
     if stored_hash == "current-hash":

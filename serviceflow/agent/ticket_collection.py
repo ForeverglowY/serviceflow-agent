@@ -1,5 +1,6 @@
 from datetime import date, datetime, timezone
 from enum import Enum
+from uuid import uuid4
 
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.base import BaseCheckpointSaver
@@ -14,11 +15,24 @@ from typing_extensions import TypedDict
 from serviceflow.agent.ticket_assessment import assess_return_request
 from serviceflow.llm.service import CLIENT, LLMServiceError
 from serviceflow.models import TicketConfirmationCreate, TicketCreate
+from serviceflow.observability import traced_call
 from serviceflow.settings import settings
 from serviceflow.ticket.review import enqueue_manual_review
 from serviceflow.ticket.service import TicketCreateConflictError, TicketEligibilityRejectedError, \
     TicketOrderNotFoundError, \
     create_ticket as create_ticket_service, requires_manual_review
+
+
+class TicketRecoveryRequiredError(Exception):
+    pass
+
+
+class TicketSessionNotFoundError(Exception):
+    pass
+
+
+class TicketResumeNotRequiredError(Exception):
+    pass
 
 
 class TicketCollectionStatus(str, Enum):
@@ -51,8 +65,10 @@ class TicketCollectionState(TypedDict):
     confirmed_at: str | None
     # 用户确认了什么
     confirmation_message: str | None
-
+    # 创建成功后的工单编号
     ticket_id: str | None
+    # 本次申请的提交标识，同一次申请重试时保持不变
+    submission_id: str | None
 
 
 # 收集节点 state
@@ -73,6 +89,7 @@ class TicketCollectionStateUpdate(TypedDict, total=False):
     confirmation_message: str | None
 
     ticket_id: str | None
+    submission_id: str | None
 
 
 class TicketExtraction(BaseModel):
@@ -259,6 +276,17 @@ def prepare_ticket_summary_node(
 
     decision_str = transfer_decision_to_chinese(state["decision"])
 
+    if state["decision"] == "reject":
+        return {
+            "missing_fields": [],
+            "answer": (
+                f"当前申请无法继续提交。\n订单号：{state['order_id']}\n"
+                f"原因：{state['reason']}\n\n尚未创建工单。"
+                "如需修改申请信息，请直接说明；也可以回复“取消售后”。"
+            ),
+            "status": TicketCollectionStatus.COLLECTING.value,
+        }
+
     answer = (
         f"请核对一下售后申请信息：\n"
         f"订单号：{state['order_id']}\n"
@@ -312,7 +340,8 @@ def cancel_ticket_collection_node(
         "requested_action": None,
         "missing_fields": [],
         "answer": "已取消本次售后信息收集，尚未创建工单。",
-        "status": TicketCollectionStatus.CANCELED.value
+        "status": TicketCollectionStatus.CANCELED.value,
+        "submission_id": None,
     }
 
 
@@ -365,7 +394,8 @@ def create_ticket_node(
     )
 
     try:
-        ticket = create_ticket_service(ticket_create=ticket_create, confirmation_create=confirmation_create)
+        ticket = traced_call("ticket.create", create_ticket_service, ticket_create=ticket_create, confirmation_create=confirmation_create,
+                                       submission_id=state["submission_id"])
     except TicketOrderNotFoundError as exception:
         raise LLMServiceError("订单不存在，无法创建工单") from exception
     except TicketCreateConflictError as exception:
@@ -439,6 +469,17 @@ def enqueue_manual_review_node(
     }
 
 
+def prepare_ticket_submission_node(
+        state: TicketCollectionState,
+) -> TicketCollectionStateUpdate:
+    submission_id = state.get("submission_id")
+    if submission_id is not None and submission_id.strip():
+        return {}
+    return {
+        "submission_id": uuid4().hex,
+    }
+
+
 def build_ticket_collection_graph(checkpointer: BaseCheckpointSaver) -> CompiledStateGraph:
     # 连成图
     builder = StateGraph(TicketCollectionState)
@@ -471,17 +512,25 @@ def build_ticket_collection_graph(checkpointer: BaseCheckpointSaver) -> Compiled
         "enqueue_manual_review",
         enqueue_manual_review_node,
     )
+    builder.add_node(
+        "prepare_ticket_submission",
+        prepare_ticket_submission_node,
+    )
 
     builder.add_conditional_edges(
         START,
         route_ticket_entry,
         {
             "cancel": "cancel_ticket_collection",
-            "confirm": "create_ticket",
+            "confirm": "prepare_ticket_submission",
             "extract": "extract_ticket",
         },
     )
 
+    builder.add_edge(
+        "prepare_ticket_submission",
+        "create_ticket",
+    )
     builder.add_edge(
         "cancel_ticket_collection",
         END,
@@ -535,7 +584,27 @@ def run_ticket_collection_turn(
     }
 
     snapshot = graph.get_state(config=config)
-    if not snapshot.values:
+
+    if snapshot.next:
+        # 上次执行尚未完成
+        raise TicketRecoveryRequiredError(
+            "售后申请存在未完成步骤，请通过重试入口恢复"
+        )
+    previous_status = snapshot.values.get("status")
+
+    finished_statuses = {
+        TicketCollectionStatus.CANCELED.value,
+        TicketCollectionStatus.CREATED.value,
+    }
+
+    if (
+            not snapshot.values
+            or previous_status is None
+            or (
+            previous_status in finished_statuses
+            and not snapshot.next
+    )
+    ):
         # 构造初始状态
         turn_input: TicketCollectionStateUpdate = {
             "user_message": user_message,
@@ -550,6 +619,7 @@ def run_ticket_collection_turn(
             "confirmed_at": None,
             "confirmation_message": None,
             "ticket_id": None,
+            "submission_id": None,
         }
     else:
         # 更新用户信息
@@ -558,6 +628,26 @@ def run_ticket_collection_turn(
         }
 
     return graph.invoke(turn_input, config=config)
+
+
+# 恢复上次失败的执行，不接收新的客户消息
+def resume_ticket_collection(
+        graph: CompiledStateGraph,
+        thread_id: str,
+) -> TicketCollectionState:
+    config: RunnableConfig = {
+        "configurable": {
+            "thread_id": thread_id,
+        }
+    }
+    snapshot = graph.get_state(config=config)
+    if not snapshot.values:
+        raise TicketSessionNotFoundError("没有可恢复的售后申请")
+
+    if not snapshot.next:
+        raise TicketResumeNotRequiredError("售后申请没有待恢复的步骤")
+
+    return graph.invoke(None, config=config)
 
 
 def is_ticket_collection_active(

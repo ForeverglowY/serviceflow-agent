@@ -412,7 +412,9 @@ def test_format_rag_answer_deduplicates_citations() -> None:
 
 def test_answer_policy_question_orchestrates_rag_steps(
     monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
+    caplog.set_level("INFO", logger="serviceflow.observability")
     fake_model = cast(SentenceTransformer, object())
     retrieval_results = [
         (
@@ -514,6 +516,8 @@ def test_answer_policy_question_orchestrates_rag_steps(
     )
 
     assert answer == "格式化后的最终RAG回答"
+    assert "operation=rag.retrieve outcome=success" in caplog.text
+    assert "elapsed_ms=" in caplog.text
     assert calls == [
         "retrieve",
         "context",

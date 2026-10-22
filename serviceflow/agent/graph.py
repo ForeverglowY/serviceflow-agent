@@ -24,6 +24,7 @@ from serviceflow.agent.runtime import (
     MAX_TOOL_ROUNDS, call_deepseek,
 )
 from serviceflow.agent.tools import ToolNotFoundError, execute_tool
+from serviceflow.observability import traced_call
 
 
 def build_customer_agent_graph(
@@ -104,7 +105,7 @@ class AgentGraphStateUpdate(TypedDict, total=False):
 def call_model_node(
         state: AgentGraphState,
 ) -> AgentGraphStateUpdate:
-    response = call_deepseek(state["messages"])
+    response = traced_call("agent.call_model", call_deepseek, state["messages"])
     message = response.choices[0].message
     assistant_message = cast(
         ChatCompletionAssistantMessageParam,
@@ -154,7 +155,8 @@ def execute_tools_node(
     tool_messages: list[ChatCompletionMessageParam] = []
     for tool_call in state["pending_tool_calls"]:
         try:
-            tool_content = execute_tool(
+            tool_content = traced_call(
+                f"tool.{tool_call.function.name}", execute_tool,
                 tool_call.function.name,
                 tool_call.function.arguments
             )

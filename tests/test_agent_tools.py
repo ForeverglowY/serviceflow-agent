@@ -9,7 +9,7 @@ from serviceflow.llm.models import GetLogisticsResult, GetOrderResult
 
 
 def test_execute_order_tool(
-    monkeypatch: pytest.MonkeyPatch,
+        monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     get_order_mock = Mock(
         return_value=GetOrderResult(
@@ -38,7 +38,7 @@ def test_execute_order_tool(
 
 
 def test_execute_logistics_tool(
-    monkeypatch: pytest.MonkeyPatch,
+        monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     get_logistics_mock = Mock(
         return_value=GetLogisticsResult(
@@ -70,7 +70,7 @@ def test_execute_logistics_tool(
 
 
 def test_execute_tool_serializes_missing_data(
-    monkeypatch: pytest.MonkeyPatch,
+        monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
         agent_tools,
@@ -90,7 +90,7 @@ def test_execute_tool_serializes_missing_data(
 
 def test_execute_tool_rejects_unknown_name() -> None:
     with pytest.raises(
-        ToolNotFoundError,
-        match="未注册的工具：delete_order",
+            ToolNotFoundError,
+            match="未注册的工具：delete_order",
     ):
         execute_tool("delete_order", "{}")

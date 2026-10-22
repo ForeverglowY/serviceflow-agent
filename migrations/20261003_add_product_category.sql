@@ -1,7 +1,7 @@
 BEGIN;
 
 ALTER TABLE products
-    ADD COLUMN IF NOT EXISTS category VARCHAR(50);
+    ADD COLUMN IF NOT EXISTS category VARCHAR (50);
 
 -- The demo catalog explicitly classifies PRODUCT-001 as an in-ear earphone.
 UPDATE products

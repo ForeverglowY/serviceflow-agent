@@ -107,6 +107,7 @@ def check_return_eligibility(
             decision=TicketEligibilityDecision.NEED_MANUAL_REVIEW,
             reason="该申请需要专项人工审核，暂不能自动确认退换货条件。"
         )
+
     if facts.requested_action == "换货" and facts.return_reason == ReturnReason.QUALITY_ISSUE and facts.quality_inspection_passed is None:
         return TicketEligibilityResult(
             decision=TicketEligibilityDecision.NEED_MANUAL_REVIEW,

@@ -89,8 +89,8 @@ def main() -> None:
         chunk
         for chunk in all_chunks
         if chunk.status == "active"
-        and chunk.category == "return"
-        and chunk.applicable_products in ("earphone", "general")
+           and chunk.category == "return"
+           and chunk.applicable_products in ("earphone", "general")
     ]
 
     model = SentenceTransformer(model_name_or_path=MODEL_NAME)

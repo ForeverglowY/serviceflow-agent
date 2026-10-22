@@ -1,7 +1,7 @@
 import logging
 
 from serviceflow.llm.models import GetOrderArguments
-from serviceflow.llm.service import GET_ORDER_TOOL, classify_intent
+from serviceflow.llm.service import GET_ORDER_TOOL
 
 
 def main() -> None:
@@ -21,8 +21,6 @@ def main() -> None:
     # print(f"订单号：{result.order_id}")
     # print(f"置信度：{result.confidence}")
     # print(f"判断理由：{result.reason}")
-
-
 
 
 if __name__ == "__main__":

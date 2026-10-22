@@ -2,6 +2,7 @@ from sentence_transformers import SentenceTransformer
 
 from serviceflow.rag.embeddings import MODEL_NAME
 
+
 def main() -> None:
     model = SentenceTransformer(model_name_or_path=MODEL_NAME)
     text = "我的蓝牙耳机左耳没有声音"

@@ -1,0 +1,16 @@
+{
+  "WF-001": ["order_query"],
+  "WF-002": ["logistics_query"],
+  "WF-003": ["order_query", "logistics_query"],
+  "WF-004": ["other"],
+  "WF-005": ["create_ticket"],
+  "WF-006": ["order_query"],
+  "WF-007": ["logistics_query"],
+  "WF-008": ["order_query"],
+  "WF-009": ["create_ticket"],
+  "WF-011": ["product_fault", "return_refund"],
+  "WF-012": ["return_refund"],
+  "WF-013": ["return_refund"],
+  "WF-021": ["order_query"],
+  "WF-022": ["other"]
+}

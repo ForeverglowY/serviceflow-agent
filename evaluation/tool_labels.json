@@ -1,0 +1,8 @@
+{
+  "WF-001": {"required": ["get_order"], "allowed": ["get_order", "get_logistics"]},
+  "WF-002": {"required": ["get_logistics"], "allowed": ["get_order", "get_logistics"]},
+  "WF-003": {"required": ["get_order", "get_logistics"], "allowed": ["get_order", "get_logistics"]},
+  "WF-006": {"required": [], "allowed": []},
+  "WF-007": {"required": [], "allowed": []},
+  "WF-008": {"required": ["get_order"], "allowed": ["get_order", "get_logistics"]}
+}

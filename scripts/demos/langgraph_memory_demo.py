@@ -148,5 +148,6 @@ def main() -> None:
     print(build_agent_turn_input("查询订单20260721001", True))
     print(build_agent_turn_input("那它到哪里了？", False))
 
+
 if __name__ == "__main__":
     main()

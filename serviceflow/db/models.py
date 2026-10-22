@@ -236,6 +236,13 @@ class TicketTable(Base):
         nullable=True,
     )
 
+    # 本次申请的提交标识，幂等
+    submission_id: Mapped[str | None] = mapped_column(
+        String(32),
+        nullable=True,
+        unique=True,
+    )
+
 
 class TicketConfirmationTable(Base):
     __tablename__ = "ticket_confirmations"

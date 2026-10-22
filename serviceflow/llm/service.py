@@ -8,6 +8,7 @@ from openai.types.shared_params import ResponseFormatJSONObject
 from pydantic import ValidationError
 
 from serviceflow.llm.models import GetLogisticsArguments, GetOrderArguments, IntentResult, ReturnReasonResult
+from serviceflow.observability import traced_call
 from serviceflow.settings import settings
 
 GET_ORDER_TOOL = ChatCompletionFunctionToolParam(
@@ -103,8 +104,9 @@ def classify_intent(user_text: str) -> IntentResult:
 
     start_time = perf_counter()
     try:
-        response = CLIENT.chat.completions.create(model=settings.deepseek_model, messages=messages,
-                                                  response_format=response_format, temperature=0, )
+        response = traced_call("llm.classify_intent", CLIENT.chat.completions.create,
+                               model=settings.deepseek_model, messages=messages,
+                               response_format=response_format, temperature=0, )
     except OpenAIError as exception:
         elapsed_ms = (perf_counter() - start_time) * 1000
         logger.exception("DeepSeek调用失败 elapsed_ms=%.2f", elapsed_ms, )
@@ -141,8 +143,9 @@ def classify_return_reason(issue_description: str, requested_action: str) -> Ret
 
     start_time = perf_counter()
     try:
-        response = CLIENT.chat.completions.create(model=settings.deepseek_model, messages=messages,
-                                                  response_format=response_format, temperature=0, )
+        response = traced_call("llm.classify_return_reason", CLIENT.chat.completions.create,
+                               model=settings.deepseek_model, messages=messages,
+                               response_format=response_format, temperature=0, )
     except OpenAIError as exception:
         elapsed_ms = (perf_counter() - start_time) * 1000
         logger.exception("DeepSeek调用失败 elapsed_ms=%.2f", elapsed_ms, )

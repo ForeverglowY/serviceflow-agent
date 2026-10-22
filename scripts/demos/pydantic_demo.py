@@ -1,5 +1,4 @@
 from serviceflow.models import Order
-from pydantic import ValidationError
 
 
 def main() -> None:
@@ -14,6 +13,7 @@ def main() -> None:
     print(order.payment_status())
     print(order.model_dump())
     print(order)
+
 
 if __name__ == '__main__':
     main()

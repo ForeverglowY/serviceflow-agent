@@ -9,6 +9,7 @@ from serviceflow.llm.service import CLIENT
 from serviceflow.rag.database_retriever import retrieve_from_database
 from serviceflow.rag.models import PolicyChunk, RAGAnswerResult
 from serviceflow.settings import settings
+from serviceflow.observability import traced_call
 
 RAG_SYSTEM_MESSAGE: ChatCompletionSystemMessageParam = {
     "role": "system",
@@ -122,7 +123,8 @@ def generate_rag_answer(
     )
 
     try:
-        response = CLIENT.chat.completions.create(
+        response = traced_call(
+            "rag.generate_answer", CLIENT.chat.completions.create,
             model=settings.deepseek_model,
             messages=messages,
             temperature=0,
@@ -156,7 +158,8 @@ def answer_policy_question(
         category: str | None = None,
         applicable_product: str | None = None,
 ) -> str:
-    retrieval_results = retrieve_from_database(
+    retrieval_results = traced_call(
+        "rag.retrieve", retrieve_from_database,
         model=model,
         query=user_question,
         top_k=top_k,

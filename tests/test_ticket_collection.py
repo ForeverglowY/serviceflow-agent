@@ -1,14 +1,15 @@
-import pytest
 from datetime import date, datetime, timezone
 from unittest.mock import Mock
+
+import pytest
 from langgraph.checkpoint.memory import InMemorySaver
 
 from serviceflow.agent import ticket_collection as collection
 from serviceflow.agent.ticket_collection import TicketExtraction, merge_ticket_extraction
-from serviceflow.models import Ticket, TicketStatus
 from serviceflow.llm.service import LLMServiceError
-from serviceflow.ticket.service import TicketEligibilityRejectedError
+from serviceflow.models import Ticket, TicketStatus
 from serviceflow.ticket.rules import TicketEligibilityDecision, TicketEligibilityResult
+from serviceflow.ticket.service import TicketEligibilityRejectedError
 
 
 @pytest.fixture(autouse=True)
@@ -83,7 +84,7 @@ def test_assess_return_request_node_rejects_blank_order_id(monkeypatch):
     ],
 )
 def test_create_ticket_node_rejects_missing_or_invalid_assessment(
-    monkeypatch, decision, reason,
+        monkeypatch, decision, reason,
 ):
     create_ticket = Mock()
     monkeypatch.setattr(collection, "create_ticket_service", create_ticket)
@@ -218,6 +219,118 @@ def test_ticket_collection_cancels_existing_collection_and_clears_fields(monkeyp
     assert extraction.call_count == 1
 
 
+@pytest.mark.parametrize("previous_status", ["created", "canceled"])
+def test_new_application_clears_old_submission_in_same_thread(monkeypatch, previous_status):
+    graph = collection.build_ticket_collection_graph(InMemorySaver())
+    config = {"configurable": {"thread_id": "new-application-test"}}
+    graph.update_state(config, {
+        "user_message": "旧申请",
+        "order_id": "OLD-ORDER",
+        "issue_description": "旧问题",
+        "requested_action": "退货",
+        "missing_fields": [],
+        "answer": "旧回答",
+        "status": previous_status,
+        "decision": "allow",
+        "reason": "旧原因",
+        "confirmed_at": "2026-10-01T00:00:00+00:00",
+        "confirmation_message": "旧确认",
+        "ticket_id": "TICKET-OLD",
+        "submission_id": "old-submission",
+    }, as_node="prepare_ticket_summary")
+    monkeypatch.setattr(collection, "extract_ticket_fields", Mock(return_value=TicketExtraction(
+        order_id="20260721001",
+    )))
+    new_application = collection.run_ticket_collection_turn("申请另一笔售后", graph, "new-application-test")
+    assert new_application["status"] == "collecting"
+    assert new_application["order_id"] == "20260721001"
+    for field in ("issue_description", "requested_action", "decision", "reason",
+                  "confirmed_at", "confirmation_message", "ticket_id", "submission_id"):
+        assert new_application[field] is None
+
+    monkeypatch.setattr(collection, "extract_ticket_fields", Mock(return_value=TicketExtraction(
+        issue_description="新问题", requested_action="换货",
+    )))
+    collection.run_ticket_collection_turn("新问题，想换货", graph, "new-application-test")
+    create = Mock(return_value=Ticket(
+        ticket_id="TICKET-NEW", order_id="20260721001", user_id="USER-DEMO",
+        issue_type="product_fault", description="新申请",
+    ))
+    monkeypatch.setattr(collection, "create_ticket_service", create)
+    result = collection.run_ticket_collection_turn("确认", graph, "new-application-test")
+    assert result["submission_id"] != "old-submission"
+    assert result["submission_id"]
+    assert create.call_args.kwargs["submission_id"] == result["submission_id"]
+
+
+@pytest.mark.parametrize("values,next_nodes,error", [
+    ({}, (), "没有可恢复"),
+    ({"status": "collecting"}, (), "没有待恢复"),
+])
+def test_resume_rejects_missing_or_finished_execution(values, next_nodes, error):
+    from types import SimpleNamespace
+
+    graph = Mock()
+    graph.get_state.return_value = SimpleNamespace(values=values, next=next_nodes)
+    expected_error = (
+        collection.TicketSessionNotFoundError if not values
+        else collection.TicketResumeNotRequiredError
+    )
+    with pytest.raises(expected_error, match=error):
+        collection.resume_ticket_collection(graph, "resume-test")
+    graph.invoke.assert_not_called()
+
+
+def test_resume_passes_none_and_original_thread_config():
+    from types import SimpleNamespace
+
+    graph = Mock()
+    graph.get_state.return_value = SimpleNamespace(
+        values={"ticket_id": "TICKET-SAVED"}, next=("enqueue_manual_review",),
+    )
+    result = collection.resume_ticket_collection(graph, "resume-test")
+    config = {"configurable": {"thread_id": "resume-test"}}
+    graph.get_state.assert_called_once_with(config=config)
+    graph.invoke.assert_called_once_with(None, config=config)
+    assert result is graph.invoke.return_value
+
+
+def test_resume_manual_review_does_not_repeat_ticket_creation(monkeypatch):
+    monkeypatch.setattr(collection, "extract_ticket_fields", Mock(return_value=TicketExtraction(
+        order_id="20260721001", issue_description="左耳无声", requested_action="换货",
+    )))
+    create = Mock(return_value=Ticket(
+        ticket_id="TICKET-RESUME", order_id="20260721001", user_id="USER-DEMO",
+        issue_type="product_fault", description="测试恢复",
+    ))
+    enqueue = Mock(side_effect=[RuntimeError("模拟登记失败"), None])
+    monkeypatch.setattr(collection, "create_ticket_service", create)
+    monkeypatch.setattr(collection, "enqueue_manual_review", enqueue)
+    graph = collection.build_ticket_collection_graph(InMemorySaver())
+    thread_id = "manual-review-resume-test"
+    config = {"configurable": {"thread_id": thread_id}}
+    collection.run_ticket_collection_turn("申请换货", graph, thread_id)
+    with pytest.raises(RuntimeError, match="模拟登记失败"):
+        collection.run_ticket_collection_turn("确认", graph, thread_id)
+    before = graph.get_state(config)
+    assert before.next == ("enqueue_manual_review",)
+    assert before.values["ticket_id"] == "TICKET-RESUME"
+
+    result = collection.resume_ticket_collection(graph, thread_id)
+
+    create.assert_called_once()
+    assert enqueue.call_count == 2
+    assert result["submission_id"] == before.values["submission_id"]
+    assert result["confirmation_message"] == "确认"
+    assert result["ticket_id"] == "TICKET-RESUME"
+    assert graph.get_state(config).next == ()
+
+
+def test_cancel_clears_existing_submission_id():
+    result = collection.cancel_ticket_collection_node({"submission_id": "old-submission"})
+    assert result["submission_id"] is None
+
+
 def test_ticket_collection_creates_ticket_after_confirmation(monkeypatch):
     monkeypatch.setattr(collection, "extract_ticket_fields", Mock(return_value=TicketExtraction(
         order_id="20260721001", issue_description="左耳无声", requested_action="换货",
@@ -239,12 +352,15 @@ def test_ticket_collection_creates_ticket_after_confirmation(monkeypatch):
     assert first["status"] == "ready_for_confirmation"
     assert first["confirmed_at"] is None
     assert first["confirmation_message"] is None
+    assert first["submission_id"] is None
+    assert len(second["submission_id"]) == 32
     assert second["status"] == "created"
     assert second["confirmation_message"] == "确认"
     assert datetime.fromisoformat(second["confirmed_at"]).utcoffset() == timezone.utc.utcoffset(None)
     saved = graph.get_state({"configurable": {"thread_id": "confirm-session"}}).values
     assert saved["confirmed_at"] == second["confirmed_at"]
     assert saved["confirmation_message"] == "确认"
+    assert saved["submission_id"] == second["submission_id"]
     assert "TICKET-TEST-001" in second["answer"]
     assert "已登记人工核验" in second["answer"]
     collection.enqueue_manual_review.assert_called_once_with("TICKET-TEST-001")
@@ -265,7 +381,54 @@ def test_ticket_collection_creates_ticket_after_confirmation(monkeypatch):
     assert confirmation.confirmation_message == "确认"
 
 
-@pytest.mark.parametrize("decision,queued", [("allow", False), ("reject", True), ("need_manual_review", True)])
+@pytest.mark.parametrize("submission_id", [None, "", "   "])
+def test_prepare_submission_generates_id_when_empty(monkeypatch, submission_id):
+    from uuid import UUID
+
+    fixed_uuid = UUID("00000000-0000-4000-8000-000000000001")
+    monkeypatch.setattr(collection, "uuid4", lambda: fixed_uuid)
+    assert collection.prepare_ticket_submission_node(
+        {"submission_id": submission_id}
+    ) == {"submission_id": fixed_uuid.hex}
+
+
+def test_prepare_submission_preserves_existing_id(monkeypatch):
+    generate_uuid = Mock()
+    monkeypatch.setattr(collection, "uuid4", generate_uuid)
+    assert collection.prepare_ticket_submission_node(
+        {"submission_id": "existing-submission"}
+    ) == {}
+    generate_uuid.assert_not_called()
+
+
+def test_prepare_submission_supports_old_state_without_id():
+    from uuid import UUID
+
+    result = collection.prepare_ticket_submission_node({})
+    assert UUID(hex=result["submission_id"]).hex == result["submission_id"]
+
+
+def test_submission_is_checkpointed_before_creation_failure(monkeypatch):
+    monkeypatch.setattr(collection, "extract_ticket_fields", Mock(return_value=TicketExtraction(
+        order_id="20260721001", issue_description="左耳无声", requested_action="换货",
+    )))
+    graph = collection.build_ticket_collection_graph(InMemorySaver())
+    config = {"configurable": {"thread_id": "submission-failure-test"}}
+    collection.run_ticket_collection_turn("申请换货", graph, "submission-failure-test")
+
+    def fail_creation(**kwargs):
+        raise RuntimeError("模拟创建失败")
+
+    monkeypatch.setattr(collection, "create_ticket_service", fail_creation)
+    with pytest.raises(RuntimeError, match="模拟创建失败"):
+        collection.run_ticket_collection_turn("确认", graph, "submission-failure-test")
+
+    snapshot = graph.get_state(config)
+    assert snapshot.values["submission_id"]
+    assert "create_ticket" in snapshot.next
+
+
+@pytest.mark.parametrize("decision,queued", [("allow", False), ("reject", False), ("need_manual_review", True)])
 def test_confirmed_ticket_follows_manual_review_route(monkeypatch, decision, queued):
     monkeypatch.setattr(collection, "extract_ticket_fields", Mock(return_value=TicketExtraction(
         order_id="20260721001", issue_description="左耳无声", requested_action="换货",
@@ -283,6 +446,12 @@ def test_confirmed_ticket_follows_manual_review_route(monkeypatch, decision, que
     collection.run_ticket_collection_turn("申请换货", graph, "route-test")
     enqueue.assert_not_called()
     result = collection.run_ticket_collection_turn("确认", graph, "route-test")
+    if decision == "reject":
+        assert result["ticket_id"] is None
+        assert result["status"] == "collecting"
+        collection.create_ticket_service.assert_not_called()
+        enqueue.assert_not_called()
+        return
     assert result["ticket_id"] == "TICKET-ROUTE-001"
     if queued:
         enqueue.assert_called_once_with("TICKET-ROUTE-001")
@@ -379,3 +548,22 @@ def test_ticket_collection_reports_eligibility_rejection_on_confirmation(monkeyp
         collection.run_ticket_collection_turn("确认", graph, "rejected-session")
 
     create_ticket.assert_called_once()
+
+
+def test_preassessment_rejection_never_enters_confirmation_or_creates_ticket(monkeypatch):
+    monkeypatch.setattr(collection, "extract_ticket_fields", Mock(return_value=TicketExtraction(
+        order_id="20260721002", issue_description="键盘坏了", requested_action="换货",
+    )))
+    monkeypatch.setattr(collection, "assess_return_request", Mock(return_value=TicketEligibilityResult(
+        decision=TicketEligibilityDecision.REJECT, reason="订单未支付，暂不能创建售后工单。",
+    )))
+    create = Mock()
+    monkeypatch.setattr(collection, "create_ticket_service", create)
+    graph = collection.build_ticket_collection_graph(InMemorySaver())
+    first = collection.run_ticket_collection_turn("键盘坏了，我想换货", graph, "unpaid-test")
+    assert first["status"] == "collecting"
+    assert "订单未支付" in first["answer"]
+    assert "请回复“确认”" not in first["answer"]
+    second = collection.run_ticket_collection_turn("确认", graph, "unpaid-test")
+    assert second["status"] == "collecting"
+    create.assert_not_called()

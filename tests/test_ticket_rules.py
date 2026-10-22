@@ -13,9 +13,9 @@ from serviceflow.ticket.rules import (
 
 
 def make_order(
-    *,
-    is_paid: bool = True,
-    status: OrderStatus = OrderStatus.PAID,
+        *,
+        is_paid: bool = True,
+        status: OrderStatus = OrderStatus.PAID,
 ) -> Order:
     return Order(
         order_id="20260721001",
@@ -118,7 +118,7 @@ def test_opened_in_ear_earphones_reject_no_reason_return() -> None:
 
 @pytest.mark.parametrize("is_opened", [False, None])
 def test_no_reason_return_without_confirmed_opening_is_not_rejected(
-    is_opened: bool | None,
+        is_opened: bool | None,
 ) -> None:
     facts = ReturnEligibilityInput(
         product_category="in_ear_earphone",
@@ -141,14 +141,15 @@ def test_no_reason_return_without_confirmed_opening_is_not_rejected(
         (date(2026, 10, 1), date(2026, 10, 9), ReturnReason.NO_REASON, TicketEligibilityDecision.REJECT),
         (None, date(2026, 10, 9), ReturnReason.NO_REASON, TicketEligibilityDecision.NEED_MANUAL_REVIEW),
         (date(2026, 10, 9), date(2026, 10, 8), ReturnReason.NO_REASON, TicketEligibilityDecision.NEED_MANUAL_REVIEW),
-        (date(2026, 10, 1), date(2026, 10, 9), ReturnReason.QUALITY_ISSUE, TicketEligibilityDecision.NEED_MANUAL_REVIEW),
+        (date(2026, 10, 1), date(2026, 10, 9), ReturnReason.QUALITY_ISSUE,
+         TicketEligibilityDecision.NEED_MANUAL_REVIEW),
     ],
 )
 def test_seven_day_limit_applies_only_to_no_reason_returns(
-    received_at: date | None,
-    requested_at: date,
-    return_reason: ReturnReason,
-    expected_decision: TicketEligibilityDecision,
+        received_at: date | None,
+        requested_at: date,
+        return_reason: ReturnReason,
+        expected_decision: TicketEligibilityDecision,
 ) -> None:
     facts = ReturnEligibilityInput(
         product_category="keyboard",
